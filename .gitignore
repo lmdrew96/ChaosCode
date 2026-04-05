@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+release/
+app-builds/
+
+# Caches and coverage
+*.tsbuildinfo
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files (keep templates)
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+
+# Local editor / tooling settings
+.idea/
+.vscode/
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
