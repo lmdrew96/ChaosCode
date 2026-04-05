@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import type { FileNode } from '@/types'
+import type { FileDiffSummary, FileNode } from '@/types'
 
 interface Props {
   nodes: FileNode[]
   selectedPath: string | null
   pinnedPaths?: string[]
+  fileDiffs?: Record<string, FileDiffSummary>
   onFileSelect: (node: FileNode) => void
   onPinFile?: (node: FileNode) => void
   rootName?: string
@@ -26,6 +27,7 @@ function TreeNode({
   depth,
   selectedPath,
   pinnedPaths,
+  fileDiffs,
   onFileSelect,
   onPinFile,
 }: {
@@ -33,12 +35,14 @@ function TreeNode({
   depth: number
   selectedPath: string | null
   pinnedPaths: string[]
+  fileDiffs: Record<string, FileDiffSummary>
   onFileSelect: (node: FileNode) => void
   onPinFile?: (node: FileNode) => void
 }) {
   const [open, setOpen] = useState(depth === 0)
   const isSelected = node.path === selectedPath
   const isPinned = pinnedPaths.includes(node.path)
+  const diff = fileDiffs[node.path]
   const indent = depth * 12
 
   if (node.type === 'directory') {
@@ -60,6 +64,7 @@ function TreeNode({
             depth={depth + 1}
             selectedPath={selectedPath}
             pinnedPaths={pinnedPaths}
+            fileDiffs={fileDiffs}
             onFileSelect={onFileSelect}
             onPinFile={onPinFile}
           />
@@ -85,6 +90,20 @@ function TreeNode({
         </span>
         <span className="truncate">{node.name}</span>
       </button>
+      {diff && (diff.added > 0 || diff.removed > 0) && (
+        <span className="flex flex-shrink-0 items-center gap-1 text-[9px] font-semibold tabular-nums">
+          {diff.added > 0 && (
+            <span className="rounded px-1 py-0.5 bg-emerald-400/10 text-emerald-400">
+              +{diff.added}
+            </span>
+          )}
+          {diff.removed > 0 && (
+            <span className="rounded px-1 py-0.5 bg-red-500/10 text-red-400">
+              -{diff.removed}
+            </span>
+          )}
+        </span>
+      )}
       {onPinFile && (
         <button
           onClick={(e) => { e.stopPropagation(); onPinFile(node) }}
@@ -102,7 +121,7 @@ function TreeNode({
   )
 }
 
-export default function FileTree({ nodes, selectedPath, pinnedPaths = [], onFileSelect, onPinFile, rootName }: Props) {
+export default function FileTree({ nodes, selectedPath, pinnedPaths = [], fileDiffs = {}, onFileSelect, onPinFile, rootName }: Props) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {rootName && (
@@ -121,6 +140,7 @@ export default function FileTree({ nodes, selectedPath, pinnedPaths = [], onFile
               depth={0}
               selectedPath={selectedPath}
               pinnedPaths={pinnedPaths}
+              fileDiffs={fileDiffs}
               onFileSelect={onFileSelect}
               onPinFile={onPinFile}
             />

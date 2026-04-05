@@ -6,6 +6,8 @@
 
 import type { ContextItem, FileNode, OpenFile } from '@/types'
 
+const MAX_CONTEXT_CHARS = 24_000
+
 // ─── Providers ────────────────────────────────────────────────────────────────
 
 /** The currently open file in Monaco */
@@ -53,9 +55,21 @@ function renderTree(nodes: FileNode[], depth: number): string {
  */
 export function serializeContextItems(items: ContextItem[]): string {
   if (items.length === 0) return ''
-  return items
-    .map((item) => `[Context: ${item.name}]\n${item.content}`)
+
+  const xml = items
+    .map((item) => {
+      const uriType = item.uri?.type ?? ''
+      const uriValue = item.uri?.value ?? ''
+      return [
+        `<context_item name="${escapeAttr(item.name)}" description="${escapeAttr(item.description)}" uri_type="${escapeAttr(uriType)}" uri_value="${escapeAttr(uriValue)}" editable="${item.editable ? 'true' : 'false'}">`,
+        item.content,
+        '</context_item>',
+      ].join('\n')
+    })
     .join('\n\n')
+
+  // Keep a deterministic context cap to reduce model drift on long sessions.
+  return xml.length > MAX_CONTEXT_CHARS ? xml.slice(0, MAX_CONTEXT_CHARS) : xml
 }
 
 /**
@@ -64,6 +78,31 @@ export function serializeContextItems(items: ContextItem[]): string {
  */
 export function buildLLMMessage(userText: string, contextItems: ContextItem[]): string {
   const ctx = serializeContextItems(contextItems)
-  if (!ctx) return userText
-  return `${userText}\n\n---\n${ctx}`
+  return [
+    '<chat_input>',
+    '<user_request>',
+    userText,
+    '</user_request>',
+    ctx ? `<context_bundle>\n${ctx}\n</context_bundle>` : '',
+    '</chat_input>',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildSonnetReviewMessage(userText: string, contextItems: ContextItem[], haikuReply: string): string {
+  const base = buildLLMMessage(userText, contextItems)
+  return [
+    base,
+    '<haiku_draft>',
+    haikuReply,
+    '</haiku_draft>',
+    '<instruction>Review the draft, fix issues directly, and return the final answer.</instruction>',
+  ].join('\n\n')
+}
+
+function escapeAttr(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
 }

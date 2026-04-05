@@ -3,31 +3,15 @@ import MonacoEditorPanel from '@/components/Editor/MonacoEditor'
 import FileTree from '@/components/FileTree/FileTree'
 import LLMPanel from '@/components/LLMPanel/LLMPanel'
 import { useAgenticMode } from '@/hooks/useAgenticMode'
-import { openFileContextItem, fileTreeContextItem, buildLLMMessage } from '@/services/context'
+import {
+  openFileContextItem,
+  fileTreeContextItem,
+  buildLLMMessage,
+  buildSonnetReviewMessage,
+} from '@/services/context'
 import { contentToString } from '@/types'
 import type { FileNode, LLMTarget, Message, OpenFile, ReviewEntry } from '@/types'
 
-// Matches the Api type exposed by src/preload/index.ts
-declare global {
-  interface Window {
-    api: {
-      openFolder: () => Promise<string | null>
-      readFile: (path: string) => Promise<string>
-      writeFile: (path: string, content: string) => Promise<void>
-      listDir: (path: string) => Promise<import('@/types').FileNode[]>
-      cancelRequest: (requestId: string) => Promise<void>
-      sendToGemini: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
-      sendToClaude: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
-      sendToGeminiAgentic: (userTask: string, requestId: string) => Promise<string>
-      claudeAgenticReview: (args: { filePath: string; content: string; userTask: string }) => Promise<string>
-      onGeminiToken: (cb: (token: string) => void) => void
-      onGeminiDone: (cb: () => void) => void
-      onClaudeToken: (cb: (token: string) => void) => void
-      onClaudeDone: (cb: () => void) => void
-      removeAllListeners: (channel: string) => void
-    }
-  }
-}
 
 // Infer Monaco language from file extension
 function inferLanguage(filename: string): string {
@@ -56,12 +40,12 @@ export default function App() {
   const [reviews, setReviews] = useState<ReviewEntry[]>([])
   const [target, setTarget] = useState<LLMTarget>('both')
   const [agenticMode, setAgenticMode] = useState(false)
-  const [geminiStreaming, setGeminiStreaming] = useState(false)
-  const [claudeStreaming, setClaudeStreaming] = useState(false)
+  const [haikuStreaming, setHaikuStreaming] = useState(false)
+  const [sonnetStreaming, setSonnetStreaming] = useState(false)
 
   // Refs to accumulate streamed content without extra re-renders
-  const geminiMsgId = useRef<string | null>(null)
-  const claudeMsgId = useRef<string | null>(null)
+  const haikuMsgId = useRef<string | null>(null)
+  const sonnetMsgId = useRef<string | null>(null)
   // Active request ID for cancellation (Continue-style AbortController adapted for IPC)
   const activeRequestId = useRef<string | null>(null)
 
@@ -142,8 +126,8 @@ export default function App() {
     if (!activeRequestId.current) return
     window.api.cancelRequest(activeRequestId.current)
     activeRequestId.current = null
-    setGeminiStreaming(false)
-    setClaudeStreaming(false)
+    setHaikuStreaming(false)
+    setSonnetStreaming(false)
   }
 
   async function handleSend(userText: string) {
@@ -165,53 +149,53 @@ export default function App() {
       { role: 'user' as const, content: contextText }
     ]
 
-    let geminiReply: string | null = null
+    let haikuReply: string | null = null
 
-    if (target === 'both' || target === 'gemini') {
-      geminiReply = await runGemini(historyForLLM)
+    if (target === 'both' || target === 'haiku') {
+      haikuReply = await runHaiku(historyForLLM)
     }
 
-    if (target === 'both' || target === 'claude') {
-      if (target === 'both' && geminiReply === null) return
+    if (target === 'both' || target === 'sonnet') {
+      if (target === 'both' && haikuReply === null) return
 
-      const historyForClaude = geminiReply
+      const historyForSonnet = haikuReply
         ? [
             ...historyForLLM.slice(0, -1),
             {
               role: 'user' as const,
-              content: `${contextText}\n\n---\n[Gemini's response — review and own the final output]:\n${geminiReply}`
+              content: buildSonnetReviewMessage(userText, contextItems, haikuReply),
             }
           ]
         : historyForLLM
-      await runClaude(historyForClaude)
+      await runSonnet(historyForSonnet)
     }
   }
 
   // Returns the full response text on success, null on error
-  function runGemini(history: { role: string; content: string }[]): Promise<string | null> {
+  function runHaiku(history: { role: string; content: string }[]): Promise<string | null> {
     return new Promise((resolve) => {
       const msgId = uid()
       const requestId = uid()
-      geminiMsgId.current = msgId
+      haikuMsgId.current = msgId
       activeRequestId.current = requestId
 
-      setGeminiStreaming(true)
+      setHaikuStreaming(true)
       setMessages((prev) => [...prev, {
-        id: msgId, role: 'assistant', source: 'gemini', content: '', timestamp: Date.now()
+        id: msgId, role: 'assistant', source: 'haiku', content: '', timestamp: Date.now()
       }])
 
-      window.api.removeAllListeners('llm:gemini:token')
-      window.api.removeAllListeners('llm:gemini:done')
+      window.api.removeAllListeners('llm:haiku:token')
+      window.api.removeAllListeners('llm:haiku:done')
 
-      window.api.onGeminiToken((token) => {
+      window.api.onHaikuToken((token) => {
         setMessages((prev) => prev.map((m) =>
           m.id === msgId ? { ...m, content: (contentToString(m.content)) + token } : m
         ))
       })
 
-      window.api.sendToGemini(history, requestId)
+      window.api.sendToHaiku(history, requestId)
         .then((fullText) => {
-          setGeminiStreaming(false)
+          setHaikuStreaming(false)
           activeRequestId.current = null
           resolve(fullText)
         })
@@ -219,37 +203,37 @@ export default function App() {
           setMessages((prev) => prev.map((m) =>
             m.id === msgId ? { ...m, content: `[Error: ${err.message}]` } : m
           ))
-          setGeminiStreaming(false)
+          setHaikuStreaming(false)
           activeRequestId.current = null
           resolve(null)
         })
     })
   }
 
-  function runClaude(history: { role: string; content: string }[]): Promise<string | null> {
+  function runSonnet(history: { role: string; content: string }[]): Promise<string | null> {
     return new Promise((resolve) => {
       const msgId = uid()
       const requestId = uid()
-      claudeMsgId.current = msgId
+      sonnetMsgId.current = msgId
       activeRequestId.current = requestId
 
-      setClaudeStreaming(true)
+      setSonnetStreaming(true)
       setMessages((prev) => [...prev, {
-        id: msgId, role: 'assistant', source: 'claude', content: '', timestamp: Date.now()
+        id: msgId, role: 'assistant', source: 'sonnet', content: '', timestamp: Date.now()
       }])
 
-      window.api.removeAllListeners('llm:claude:token')
-      window.api.removeAllListeners('llm:claude:done')
+      window.api.removeAllListeners('llm:sonnet:token')
+      window.api.removeAllListeners('llm:sonnet:done')
 
-      window.api.onClaudeToken((token) => {
+      window.api.onSonnetToken((token) => {
         setMessages((prev) => prev.map((m) =>
           m.id === msgId ? { ...m, content: (contentToString(m.content)) + token } : m
         ))
       })
 
-      window.api.sendToClaude(history, requestId)
+      window.api.sendToSonnet(history, requestId)
         .then((fullText) => {
-          setClaudeStreaming(false)
+          setSonnetStreaming(false)
           activeRequestId.current = null
           resolve(fullText)
         })
@@ -257,7 +241,7 @@ export default function App() {
           setMessages((prev) => prev.map((m) =>
             m.id === msgId ? { ...m, content: `[Error: ${err.message}]` } : m
           ))
-          setClaudeStreaming(false)
+          setSonnetStreaming(false)
           activeRequestId.current = null
           resolve(null)
         })
@@ -299,6 +283,7 @@ export default function App() {
             nodes={fileTree}
             selectedPath={openFile?.path ?? null}
             pinnedPaths={pinnedFiles.map((f) => f.path)}
+            fileDiffs={agenticState.fileDiffs}
             onFileSelect={handleFileSelect}
             onPinFile={handlePinFile}
             rootName={undefined}
@@ -323,8 +308,8 @@ export default function App() {
             onTargetChange={setTarget}
             onSend={handleSend}
             onCancel={handleCancel}
-            geminiStreaming={geminiStreaming}
-            claudeStreaming={claudeStreaming}
+            haikuStreaming={haikuStreaming}
+            sonnetStreaming={sonnetStreaming}
             agenticMode={agenticMode}
             onAgenticModeChange={setAgenticMode}
             agenticState={agenticState}

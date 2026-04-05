@@ -1,18 +1,19 @@
 {
   "name": "chaoscode",
   "version": "0.1.0",
-  "description": "Multi-LLM agentic IDE — Gemini implements, Claude reviews",
+  "description": "Multi-LLM agentic IDE — Haiku implements, Sonnet reviews",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prompt-security:harness": "tsx src/renderer/src/services/agenticSecurity.test.ts"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@types/node": "^22.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "electron": "^33.3.1",
@@ -20,14 +21,14 @@
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.6",
     "typescript": "^5.7.3"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "@google/generative-ai": "^0.21.0",
     "@monaco-editor/react": "^4.6.0",
-    "monaco-editor": "^0.55.0",
     "dotenv": "^16.4.7",
+    "monaco-editor": "^0.55.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   }

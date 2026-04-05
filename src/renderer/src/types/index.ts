@@ -37,8 +37,8 @@ export interface ContextItem {
 // Continue's ChatHistoryItem pattern: message + the context that was active
 // when it was sent. Keeps messages clean and context auditable.
 
-export type MessageSource = 'gemini' | 'claude'
-export type LLMTarget = 'both' | 'gemini' | 'claude'
+export type MessageSource = 'haiku' | 'sonnet'
+export type LLMTarget = 'both' | 'haiku' | 'sonnet'
 
 export interface Message {
   id: string
@@ -63,6 +63,11 @@ export interface ReviewEntry {
 }
 
 // ─── File system ──────────────────────────────────────────────────────────────
+
+export interface FileDiffSummary {
+  added: number
+  removed: number
+}
 
 export interface FileNode {
   name: string

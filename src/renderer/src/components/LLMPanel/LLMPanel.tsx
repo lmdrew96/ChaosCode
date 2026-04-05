@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { Message, LLMTarget, ReviewEntry, OpenFile } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
+import { contentToString } from '@/types'
 
 interface Props {
   messages: Message[]
@@ -10,8 +11,8 @@ interface Props {
   onTargetChange: (t: LLMTarget) => void
   onSend: (text: string) => void
   onCancel: () => void
-  geminiStreaming: boolean
-  claudeStreaming: boolean
+  haikuStreaming: boolean
+  sonnetStreaming: boolean
   agenticMode: boolean
   onAgenticModeChange: (v: boolean) => void
   agenticState: AgenticState
@@ -21,26 +22,26 @@ interface Props {
 
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user'
-  const isGemini = msg.source === 'gemini'
-  const isClaude = msg.source === 'claude'
+  const isHaiku = msg.source === 'haiku'
+  const content = contentToString(msg.content)
 
   return (
     <div className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
       {!isUser && (
         <span className={`text-[10px] font-semibold uppercase tracking-wider px-1 ${
-          isGemini ? 'text-accent-gemini/70' : 'text-accent-claude/70'
+          isHaiku ? 'text-accent-gemini/70' : 'text-accent-claude/70'
         }`}>
-          {isGemini ? 'Gemini' : 'Claude'}
+          {isHaiku ? 'Haiku' : 'Sonnet'}
         </span>
       )}
       <div className={`max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words ${
         isUser
           ? 'bg-white/10 text-white/90'
-          : isGemini
+          : isHaiku
             ? 'bg-[#1a2a3a] border border-accent-gemini/20 text-white/85'
             : 'bg-[#2a1f0a] border border-accent-claude/20 text-white/85'
       }`}>
-        {msg.content || <span className="animate-pulse opacity-40">▍</span>}
+        {content || <span className="animate-pulse opacity-40">▍</span>}
       </div>
     </div>
   )
@@ -48,8 +49,8 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 const TARGETS: { value: LLMTarget; label: string }[] = [
   { value: 'both', label: 'Both' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'claude', label: 'Claude' },
+  { value: 'haiku', label: 'Haiku Planner' },
+  { value: 'sonnet', label: 'Sonnet Reviewer' },
 ]
 
 export default function LLMPanel({
@@ -60,8 +61,8 @@ export default function LLMPanel({
   onTargetChange,
   onSend,
   onCancel,
-  geminiStreaming,
-  claudeStreaming,
+  haikuStreaming,
+  sonnetStreaming,
   agenticMode,
   onAgenticModeChange,
   agenticState,
@@ -73,7 +74,7 @@ export default function LLMPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isAgenticBusy = agenticState.phase === 'implementing' || agenticState.phase === 'reviewing' || agenticState.phase === 'planning'
-  const isBusy = geminiStreaming || claudeStreaming || isAgenticBusy
+  const isBusy = haikuStreaming || sonnetStreaming || isAgenticBusy
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -124,9 +125,9 @@ export default function LLMPanel({
                 onClick={() => onTargetChange(value)}
                 className={`px-2 py-0.5 text-[10px] rounded transition-all ${
                   target === value
-                    ? value === 'gemini'
+                    ? value === 'haiku'
                       ? 'bg-accent-gemini/20 text-accent-gemini'
-                      : value === 'claude'
+                      : value === 'sonnet'
                         ? 'bg-accent-claude/20 text-accent-claude'
                         : 'bg-white/15 text-white/80'
                     : 'text-white/30 hover:text-white/50'
@@ -139,13 +140,26 @@ export default function LLMPanel({
         )}
       </div>
 
+      {agenticMode && (
+        <div className="px-3 py-2 border-b border-white/5 text-[10px] text-white/35 leading-relaxed">
+          <span className="uppercase tracking-wider text-white/20 mr-2">Workflow</span>
+          <span className="text-accent-gemini/70">Haiku Planner</span>
+          <span className="mx-1 text-white/15">→</span>
+          <span className="text-accent-claude/70">Sonnet Reviewer</span>
+          <span className="mx-1 text-white/15">→</span>
+          <span className="text-accent-gemini/70">Haiku Implementer</span>
+          <span className="mx-1 text-white/15">→</span>
+          <span className="text-accent-claude/70">Sonnet Final Reviewer</span>
+        </div>
+      )}
+
       {/* Breaking issue interrupt alert */}
       {breakingIssue && (
         <div className="mx-2 mt-2 p-3 bg-red-950/60 border border-red-500/30 rounded-lg flex-shrink-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-1">
-                ⚠ Claude interrupted — breaking issue
+                ⚠ Sonnet interrupted — breaking issue
               </p>
               <p className="text-[10px] text-white/50 truncate">{breakingIssue.filePath}</p>
               {breakingIssue.issues.map((issue, i) => (
@@ -168,9 +182,9 @@ export default function LLMPanel({
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] text-accent-gemini/70 flex items-center gap-1">
               <span className="animate-pulse">●</span>
-              {agenticState.phase === 'planning' && 'Planning…'}
-              {agenticState.phase === 'implementing' && `Writing${agenticState.currentFilePath ? `: ${agenticState.currentFilePath.split('/').pop()}` : '…'}`}
-              {agenticState.phase === 'reviewing' && 'Claude reviewing all files…'}
+              {agenticState.phase === 'planning' && 'Haiku Planner planning…'}
+              {agenticState.phase === 'implementing' && `Haiku Implementer writing${agenticState.currentFilePath ? `: ${agenticState.currentFilePath.split('/').pop()}` : '…'}`}
+              {agenticState.phase === 'reviewing' && 'Sonnet Reviewer reviewing all files…'}
             </span>
             {agenticState.filesWritten.length > 0 && (
               <span className="text-[10px] text-white/20">
@@ -178,20 +192,43 @@ export default function LLMPanel({
               </span>
             )}
           </div>
+
+          {agenticState.reviewingFiles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] text-accent-claude/70 flex items-center gap-1 shrink-0">
+                <span className="animate-pulse">●</span>
+                Sonnet Final Reviewer reviewing {agenticState.reviewingFiles.length} file{agenticState.reviewingFiles.length !== 1 ? 's' : ''}
+              </span>
+              {agenticState.reviewingFiles.slice(0, 3).map((filePath) => (
+                <span
+                  key={filePath}
+                  className="px-1.5 py-0.5 text-[9px] rounded bg-accent-claude/10 border border-accent-claude/20 text-accent-claude/80 truncate max-w-[10rem]"
+                  title={filePath}
+                >
+                  {filePath.split('/').pop()}
+                </span>
+              ))}
+              {agenticState.reviewingFiles.length > 3 && (
+                <span className="px-1.5 py-0.5 text-[9px] rounded bg-white/5 text-white/30">
+                  +{agenticState.reviewingFiles.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* Chat status bar */}
-      {!agenticMode && (geminiStreaming || claudeStreaming) && (
+      {!agenticMode && (haikuStreaming || sonnetStreaming) && (
         <div className="flex gap-3 px-3 py-1.5 bg-white/3 border-b border-white/5 flex-shrink-0">
-          {geminiStreaming && (
+          {haikuStreaming && (
             <span className="text-[10px] text-accent-gemini/70 flex items-center gap-1">
-              <span className="animate-pulse">●</span> Gemini writing…
+              <span className="animate-pulse">●</span> Haiku writing…
             </span>
           )}
-          {claudeStreaming && (
+          {sonnetStreaming && (
             <span className="text-[10px] text-accent-claude/70 flex items-center gap-1">
-              <span className="animate-pulse">●</span> Claude reviewing…
+              <span className="animate-pulse">●</span> Sonnet reviewing…
             </span>
           )}
         </div>
@@ -202,7 +239,7 @@ export default function LLMPanel({
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
             <p className="text-[11px] text-white/15 text-center leading-relaxed">
-              Gemini implements.<br />Claude reviews.<br />You direct.
+              Haiku Planner plans.<br />Sonnet Reviewer reviews.<br />Haiku Implementer writes.<br />Sonnet Final Reviewer signs off.
             </p>
           </div>
         )}
@@ -281,7 +318,7 @@ export default function LLMPanel({
               isBusy
                 ? isAgenticBusy ? 'Agentic task running…' : 'Waiting for response…'
                 : agenticMode
-                  ? 'Describe a task for Gemini to implement…'
+                  ? 'Describe a task for Haiku Implementer to implement…'
                   : 'Message (Enter to send, Shift+Enter for newline)'
             }
             disabled={isBusy}

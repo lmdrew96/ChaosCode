@@ -10,7 +10,7 @@
 
 ## Overview
 
-ChaosCode is a custom multi-LLM agentic IDE built with Electron, React, and TypeScript. It combines a Monaco-based code editor with a collaborative dual-LLM panel where **Gemini implements** and **Claude reviews and edits** — all while the developer (the user) acts as Director.
+ChaosCode is a custom multi-LLM agentic IDE built with Electron, React, and TypeScript. It combines a Monaco-based code editor with a collaborative dual-LLM panel where **Haiku plans and implements** and **Sonnet reviews and edits** — all while the developer (the user) acts as Director.
 
 This is v0: the smallest buildable version that proves the core loop works.
 
@@ -20,10 +20,10 @@ This is v0: the smallest buildable version that proves the core loop works.
 
 ```
 User defines a plan
-→ Gemini implements, file by file
-→ Claude reviews and edits each file in the background (parallel)
-→ Breaking issues: Claude interrupts immediately
-→ Minor issues: Claude fixes silently
+→ Haiku implements, file by file
+→ Sonnet reviews and edits each file in the background (parallel)
+→ Breaking issues: Sonnet interrupts immediately
+→ Minor issues: Sonnet fixes silently
 → User reviews the final, already-edited output
 ```
 
@@ -36,23 +36,23 @@ User defines a plan
 | Shell | Electron |
 | Frontend | React + TypeScript |
 | Code Editor | Monaco Editor (embedded) |
-| LLM 1 | Google Generative AI SDK (Gemini) |
-| LLM 2 | Anthropic SDK (Claude) |
+| LLM 1 | Anthropic SDK (Claude Haiku) |
+| LLM 2 | Anthropic SDK (Claude Sonnet) |
 | Styling | TailwindCSS |
 
 ---
 
 ## Role Definitions
 
-### Gemini — The Implementer
+### Haiku Planner / Haiku Implementer
 - Responds **first** to all user messages
 - Writes code fast and commits to answers
 - Does not look back at files it has already passed
-- Aware that Claude will review its output
+- Aware that Sonnet will review its output
 
-### Claude — The Editor-in-Chief
-- Responds **second**, after seeing Gemini's response
-- Reviews and directly edits Gemini's output
+### Sonnet Reviewer / Sonnet Final Reviewer
+- Responds **second**, after seeing Haiku's response
+- Reviews and directly edits Haiku's output
 - Does not just leave notes — it fixes the code
 - Flags breaking issues immediately; handles minor issues silently
 - Acts as quality gatekeeper before output reaches the user
@@ -70,13 +70,13 @@ User defines a plan
 Both LLMs share full conversation context and see each other's responses. Neither is siloed.
 
 ### Turn Order
-Sequential: **Gemini → Claude**, always.
+Sequential: **Haiku → Sonnet**, always.
 
 ### Addressing
 Toggle control with three modes:
 - `Both` (default)
-- `Gemini only`
-- `Claude only`
+- `Haiku only`
+- `Sonnet only`
 
 ### File Context Injection
 The currently open file in Monaco is **automatically injected** into every message sent to both LLMs. Neither LLM needs to ask for the file — they always have it.
@@ -88,46 +88,35 @@ The currently open file in Monaco is **automatically injected** into every messa
 When the user initiates an agentic task (e.g. "build the file tree component"):
 
 1. User defines the plan in the chat panel
-2. Gemini implements, file by file, without stopping
-3. Claude reviews each file **in parallel** (non-blocking)
+2. Haiku implements, file by file, without stopping
+3. Sonnet reviews each file **in parallel** (non-blocking)
 4. Two-tier response system:
 
-| Issue Severity | Claude's Action |
+| Issue Severity | Sonnet's Action |
 |---|---|
-| **Breaking** (bad interfaces, wrong architecture, logic errors that will cascade) | Interrupt immediately — stop Gemini, surface the issue to the user |
+| **Breaking** (bad interfaces, wrong architecture, logic errors that will cascade) | Interrupt immediately — stop Haiku, surface the issue to the user |
 | **Minor** (typos, style issues, small logic improvements) | Fix silently, log to review panel |
 
-5. User reviews final output — already edited by Claude
+5. User reviews final output — already edited by Sonnet
 
 ---
 
 ## System Prompts
 
-### Gemini System Prompt
-```
-You are a collaborative coding assistant inside ChaosCode, a multi-LLM agentic IDE built by ADHDesigns. You will always be given the contents of the currently open file as context.
+Prompt templates are centralized in `src/main/prompts.ts` and use a Continue-style contract:
 
-You respond first. Give your best, direct answer. Be concrete and actionable. Do not hedge excessively. Commit to your implementation decisions.
+- Layered instructions (`identity` + `behavior` + `rules` + strict output contracts)
+- XML-style envelopes for task/context boundaries
+- Deterministic machine-readable agentic output (`<file>`, `<review>`, etc.)
+- Explicit anti-drift rules (no hidden tool claims, no prose outside required tags in agentic mode)
 
-Another AI (Claude) will review your response after you. Write as though your work will be reviewed.
-```
+### Runtime Prompting Pattern
 
-### Claude System Prompt
-```
-You are a collaborative coding assistant inside ChaosCode, a multi-LLM agentic IDE built by ADHDesigns. You will always be given the contents of the currently open file as context.
+1. Renderer builds structured payloads (`<chat_input>`, `<context_bundle>`, `<agentic_task_input>`)
+2. Main process applies role-specific Claude system prompt (Haiku/Sonnet/chat/agentic)
+3. Agentic responses are parsed by XML tags and auto-reviewed per file
 
-You respond after Gemini. Your job is to act as Editor-in-Chief:
-- Review Gemini's response critically
-- Validate what is correct
-- Directly fix what is wrong or incomplete — do not just leave notes
-- If you fully agree with Gemini's output, say so briefly and add any remaining value
-
-In agentic coding mode:
-- Minor issues (style, small logic improvements): fix silently and log the change
-- Breaking issues (bad interfaces, cascading logic errors, architectural problems): interrupt immediately and surface the issue to the user
-
-Do not repeat what Gemini said. You own the final output.
-```
+This keeps prompting auditable and makes parser failures less likely during long sessions.
 
 ---
 
@@ -137,13 +126,13 @@ Do not repeat what Gemini said. You own the final output.
 - [ ] Electron app shell
 - [ ] Monaco Editor (single file view)
 - [ ] Basic file tree (open/navigate files)
-- [ ] Multi-LLM chat panel (Gemini + Claude, side by side)
+- [ ] Multi-LLM chat panel (Haiku + Sonnet, side by side)
 - [ ] File context auto-injection on every message
-- [ ] Sequential turn-taking (Gemini → Claude)
-- [ ] LLM toggle (Both / Gemini only / Claude only)
-- [ ] Agentic mode (Gemini implements, Claude reviews in background)
-- [ ] Review log panel (Claude's minor fix notes)
-- [ ] Interrupt system (Claude surfaces breaking issues)
+- [ ] Sequential turn-taking (Haiku → Sonnet)
+- [ ] LLM toggle (Both / Haiku only / Sonnet only)
+- [ ] Agentic mode (Haiku implements, Sonnet reviews in background)
+- [ ] Review log panel (Sonnet's minor fix notes)
+- [ ] Interrupt system (Sonnet surfaces breaking issues)
 
 ### NOT in v0
 - Terminal
@@ -167,11 +156,11 @@ chaosCode/
 │   │   │   ├── Editor/        # Monaco wrapper
 │   │   │   ├── FileTree/      # File navigation
 │   │   │   ├── LLMPanel/      # Multi-LLM chat
-│   │   │   └── ReviewLog/     # Claude's background edits
+│   │   │   └── ReviewLog/     # Sonnet's background edits
 │   │   ├── hooks/
 │   │   ├── services/
-│   │   │   ├── gemini.ts      # Gemini API service
-│   │   │   └── claude.ts      # Anthropic API service
+│   │   │   ├── haiku.ts       # Haiku API service
+│   │   │   └── sonnet.ts      # Sonnet API service
 │   │   └── App.tsx
 ├── package.json
 └── electron.config.ts
@@ -182,7 +171,6 @@ chaosCode/
 ## API Keys Required
 
 - `ANTHROPIC_API_KEY`
-- `GOOGLE_GENERATIVE_AI_API_KEY`
 
 Store in `.env` — never commit to GitHub.
 
@@ -192,7 +180,7 @@ Store in `.env` — never commit to GitHub.
 
 ChaosCode v0 is complete when:
 1. A user can open a file and see it in Monaco
-2. A user can send a message and receive sequential responses from Gemini then Claude
+2. A user can send a message and receive sequential responses from Haiku then Sonnet
 3. Both LLMs demonstrably have the open file as context
-4. In agentic mode, Claude reviews files in parallel without blocking Gemini
+4. In agentic mode, Sonnet reviews files in parallel without blocking Haiku
 5. Breaking issues surface as interrupts; minor issues appear in the review log

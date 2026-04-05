@@ -18,22 +18,24 @@ export type Api = {
   cancelRequest: (requestId: string) => Promise<void>
 
   // Chat LLMs
-  sendToGemini: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
-  sendToClaude: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
+  sendToHaiku: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
+  sendToSonnet: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
 
   // Agentic LLMs
-  sendToGeminiAgentic: (userTask: string, requestId: string) => Promise<string>
-  claudeAgenticReview: (args: {
+  sendToHaikuAgentic: (userTask: string, requestId: string) => Promise<string>
+  sonnetAgenticReview: (args: {
     filePath: string
     content: string
     userTask: string
   }) => Promise<string>
 
   // Streaming listeners
-  onGeminiToken: (cb: (token: string) => void) => void
-  onGeminiDone: (cb: () => void) => void
-  onClaudeToken: (cb: (token: string) => void) => void
-  onClaudeDone: (cb: () => void) => void
+  onHaikuToken: (cb: (token: string) => void) => void
+  onHaikuDone: (cb: () => void) => void
+  onHaikuAgenticToken: (requestId: string, cb: (token: string) => void) => () => void
+  onHaikuAgenticDone: (requestId: string, cb: () => void) => () => void
+  onSonnetToken: (cb: (token: string) => void) => void
+  onSonnetDone: (cb: () => void) => void
   removeAllListeners: (channel: string) => void
 }
 
@@ -45,16 +47,28 @@ const api: Api = {
 
   cancelRequest: (requestId) => ipcRenderer.invoke('llm:cancel', requestId),
 
-  sendToGemini: (messages, requestId) => ipcRenderer.invoke('llm:gemini', messages, requestId),
-  sendToClaude: (messages, requestId) => ipcRenderer.invoke('llm:claude', messages, requestId),
+  sendToHaiku: (messages, requestId) => ipcRenderer.invoke('llm:haiku', messages, requestId),
+  sendToSonnet: (messages, requestId) => ipcRenderer.invoke('llm:sonnet', messages, requestId),
 
-  sendToGeminiAgentic: (userTask, requestId) => ipcRenderer.invoke('llm:gemini:agentic', userTask, requestId),
-  claudeAgenticReview: (args) => ipcRenderer.invoke('llm:claude:agentic-review', args),
+  sendToHaikuAgentic: (userTask, requestId) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId),
+  sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),
 
-  onGeminiToken: (cb) => { ipcRenderer.on('llm:gemini:token', (_e, token) => cb(token)) },
-  onGeminiDone: (cb) => { ipcRenderer.on('llm:gemini:done', () => cb()) },
-  onClaudeToken: (cb) => { ipcRenderer.on('llm:claude:token', (_e, token) => cb(token)) },
-  onClaudeDone: (cb) => { ipcRenderer.on('llm:claude:done', () => cb()) },
+  onHaikuToken: (cb) => { ipcRenderer.on('llm:haiku:token', (_e, token) => cb(token)) },
+  onHaikuDone: (cb) => { ipcRenderer.on('llm:haiku:done', () => cb()) },
+  onHaikuAgenticToken: (requestId, cb) => {
+    const channel = `llm:haiku:agentic:token:${requestId}`
+    const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+  onHaikuAgenticDone: (requestId, cb) => {
+    const channel = `llm:haiku:agentic:done:${requestId}`
+    const listener = () => cb()
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+  onSonnetToken: (cb) => { ipcRenderer.on('llm:sonnet:token', (_e, token) => cb(token)) },
+  onSonnetDone: (cb) => { ipcRenderer.on('llm:sonnet:done', () => cb()) },
   removeAllListeners: (channel) => { ipcRenderer.removeAllListeners(channel) }
 }
 
