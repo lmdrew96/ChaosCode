@@ -13,7 +13,7 @@ import {
 
 dotenv.config()
 
-const HAIKU_MODEL = 'claude-3-5-haiku-latest'
+const HAIKU_MODEL = 'claude-haiku-4-5'
 const SONNET_MODEL = 'claude-sonnet-4-6'
 
 function createAnthropicClient(): Anthropic {
@@ -30,28 +30,43 @@ function toAnthropicMessages(messages: Array<{ role: string; content: string }>)
 }
 
 function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    backgroundColor: '#0f0f0f',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
-  })
+   const win = new BrowserWindow({
+     width: 1400,
+     height: 900,
+     minWidth: 900,
+     minHeight: 600,
+     backgroundColor: '#0f0f0f',
+     titleBarStyle: 'hiddenInset',
+     trafficLightPosition: { x: 16, y: 16 },
+     webPreferences: {
+       preload: join(__dirname, '../preload/index.js'),
+       contextIsolation: true,
+       nodeIntegration: false,
+       sandbox: false,
+       webSecurity: true
+     }
+   })
 
-  if (process.env.NODE_ENV === 'development') {
-    win.loadURL('http://localhost:5173')
-    win.webContents.openDevTools({ mode: 'detach' })
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+   if (process.env.NODE_ENV === 'development') {
+     win.loadURL('http://localhost:5173')
+     win.webContents.openDevTools({ mode: 'detach' })
+   } else {
+     win.loadFile(join(__dirname, '../renderer/index.html'))
+   }
+
+    // Set CSP headers for web resources
+    win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            process.env.NODE_ENV === 'development'
+              ? "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:5173; connect-src 'self' http://localhost:5173; worker-src 'self' blob: http://localhost:5173; font-src 'self' data:;"
+              : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:;"
+          ]
+        }
+      })
+    })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
