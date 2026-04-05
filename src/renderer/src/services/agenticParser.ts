@@ -12,13 +12,17 @@ export interface ReviewResult {
 /**
  * Strips markdown code fences from file content.
  * Haiku often wraps content in ```lang ... ``` even inside <file> blocks.
+ * Only strips when the ENTIRE content is one fence wrapper with no inner fences
+ * (avoids corrupting .md files or other files that legitimately contain code blocks).
  */
 function stripFences(content: string): string {
-  return content
-    .trim()
-    .replace(/^```[\w]*\n?/, '')  // opening fence
-    .replace(/\n?```$/, '')        // closing fence
-    .trim()
+  const trimmed = content.trim()
+  const outerMatch = trimmed.match(/^```[\w.-]*\n([\s\S]*)\n```$/)
+  if (!outerMatch) return trimmed
+  const inner = outerMatch[1]
+  // If inner content has lines starting with ``` it's a nested structure — leave it alone
+  if (/^```/m.test(inner)) return trimmed
+  return inner
 }
 
 /**

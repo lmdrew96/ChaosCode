@@ -15,7 +15,7 @@ export function openFileContextItem(file: OpenFile): ContextItem {
   return {
     name: file.path.split('/').pop() ?? file.path,
     description: file.path,
-    content: `\`\`\`${file.language}\n${file.content}\n\`\`\``,
+    content: `\`\`\`${file.path}\n${file.content}\n\`\`\``,
     uri: { type: 'file', value: file.path },
     editable: true,
   }

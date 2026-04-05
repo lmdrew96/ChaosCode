@@ -29,6 +29,35 @@ function uid() {
   return Math.random().toString(36).slice(2)
 }
 
+/**
+ * Prunes message history to fit within a character budget before sending to the LLM.
+ * Strategy: walk backwards from most recent, keep messages that fit, but always
+ * preserve the first message (which typically contains the initial plan/task).
+ * This prevents silent context overflow on long sessions.
+ */
+const HISTORY_CHAR_BUDGET = 40_000
+
+function pruneMessages(msgs: Message[]): Message[] {
+  if (msgs.length <= 1) return msgs
+
+  let total = 0
+  const recentIndices: number[] = []
+
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const chars = contentToString(msgs[i].content).length
+    if (total + chars > HISTORY_CHAR_BUDGET && recentIndices.length > 0) break
+    total += chars
+    recentIndices.unshift(i)
+  }
+
+  // Always include the first message if it wasn't reached
+  if (recentIndices[0] !== 0) {
+    return [msgs[0], ...recentIndices.map((i) => msgs[i])]
+  }
+
+  return recentIndices.map((i) => msgs[i])
+}
+
 export default function App() {
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [rootName, setRootName] = useState<string | undefined>()
@@ -145,7 +174,7 @@ export default function App() {
     const contextText = buildLLMMessage(userText, contextItems)
 
     const historyForLLM = [
-      ...messages.map((m) => ({ role: m.role, content: contentToString(m.content) })),
+      ...pruneMessages(messages).map((m) => ({ role: m.role, content: contentToString(m.content) })),
       { role: 'user' as const, content: contextText }
     ]
 
