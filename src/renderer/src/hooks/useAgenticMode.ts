@@ -3,7 +3,8 @@ import { parseReview, parseStreamToolCalls } from '@/services/agenticParser'
 import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
 import { ToolRegistry } from '@/services/toolRegistry'
-import type { FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
+import type { FileDiffSummary, FileNode, MessagePart, OpenFile, TerminalOutputPart } from '@/types'
+import useChatStore from '@/store/chatStore'
 
 function toLines(text: string): string[] {
   if (!text) return []
@@ -81,8 +82,6 @@ interface Options {
   rootPath: string | null
   fileTree: FileNode[]
   openFile: OpenFile | null
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>
-  setReviews: React.Dispatch<React.SetStateAction<ReviewEntry[]>>
   onFileWritten: (filePath: string) => void
 }
 
@@ -90,10 +89,9 @@ export function useAgenticMode({
   rootPath,
   fileTree,
   openFile,
-  setMessages,
-  setReviews,
   onFileWritten,
 }: Options) {
+  const { setMessages, setReviews } = useChatStore()
   const [agenticState, setAgenticState] = useState<AgenticState>({
     phase: 'idle',
     currentFilePath: null,
@@ -584,7 +582,7 @@ export function useAgenticMode({
         setAgenticState((s) => ({ ...s, phase: 'done', currentFilePath: null }))
       }
     },
-    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten]
+    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   return {

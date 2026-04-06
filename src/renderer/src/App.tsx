@@ -14,7 +14,8 @@ import {
   buildSonnetReviewMessage,
 } from '@/services/context'
 import { contentToString } from '@/types'
-import type { FileNode, LLMTarget, Message, OpenFile, ReviewEntry } from '@/types'
+import type { FileNode, OpenFile } from '@/types'
+import useChatStore from '@/store/chatStore'
 
 
 // Infer Monaco language from file extension
@@ -77,12 +78,15 @@ export default function App() {
   const [openFile, setOpenFile] = useState<OpenFile | null>(null)
   // Extra files pinned as context (readable by agents but not open in editor)
   const [pinnedFiles, setPinnedFiles] = useState<OpenFile[]>([])
-  const [messages, setMessages] = useState<Message[]>([])
-  const [reviews, setReviews] = useState<ReviewEntry[]>([])
-  const [target, setTarget] = useState<LLMTarget>('both')
-  const [agenticMode, setAgenticMode] = useState(false)
-  const [haikuStreaming, setHaikuStreaming] = useState(false)
-  const [sonnetStreaming, setSonnetStreaming] = useState(false)
+  const {
+    messages, setMessages,
+    reviews, setReviews,
+    target, setTarget,
+    agenticMode, setAgenticMode,
+    haikuStreaming, setHaikuStreaming,
+    sonnetStreaming, setSonnetStreaming,
+    estimatedTokens,
+  } = useChatStore()
   const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, toggleCollapse, startResize } = useResizablePanels(layoutRef)
   const { sessions, activeSessionId, activeSession, saveSession, newSession, switchSession, deleteSession } = useSessionStorage()
   const [sessionsOpen, setSessionsOpen] = useState(false)
@@ -203,8 +207,6 @@ export default function App() {
     rootPath,
     fileTree,
     openFile,
-    setMessages,
-    setReviews,
     onFileWritten: handleAgenticFileWritten,
   })
 
@@ -470,7 +472,12 @@ export default function App() {
           )}
         </div>
 
-        <div className="ml-auto flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="ml-auto flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          {estimatedTokens > 0 && (
+            <span className="text-[9px] tabular-nums text-subtle" title="Estimated token usage this session">
+              ~{estimatedTokens >= 1000 ? `${(estimatedTokens / 1000).toFixed(1)}k` : estimatedTokens} tok
+            </span>
+          )}
           <span className="text-[9px] uppercase tracking-[0.3em] text-subtle">Theme</span>
           <div className="flex items-center rounded-full border border-border bg-surface-1 p-0.5 shadow-sm">
             {THEME_OPTIONS.map(({ value, label }) => {

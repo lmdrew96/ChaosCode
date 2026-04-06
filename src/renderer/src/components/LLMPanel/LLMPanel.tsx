@@ -637,9 +637,9 @@ export default function LLMPanel({
                   ? 'Describe a task for Haiku Implementer to implement…'
                   : 'Message (Enter to send, Shift+Enter for newline)'
             }
-            rows={1}
-            className="flex-1 bg-transparent text-xs text-primary placeholder:text-subtle resize-none outline-none leading-relaxed max-h-32 overflow-y-auto"
-            style={{ minHeight: '20px' }}
+            rows={4}
+            className="flex-1 bg-transparent text-xs text-primary placeholder:text-subtle resize-none outline-none leading-relaxed overflow-y-auto"
+            style={{ minHeight: '64px', maxHeight: '64px' }}
           />
           {isBusy ? (
             <button
