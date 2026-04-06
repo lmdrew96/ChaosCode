@@ -536,15 +536,16 @@ export function useAgenticMode({
       })
 
       registry.register({
-        name: 'run_command',
-        description: 'Execute a shell command and return its output',
+        name: 'run_terminal_command',
+        description: 'Execute a shell command within the project root and return stdout/stderr. The optional cwd field is a path relative to the project root.',
         execute: async (input) => {
           const command = typeof input.command === 'string' ? input.command : ''
-          const cwd = typeof input.cwd === 'string' ? input.cwd : (rootPath ?? undefined)
+          const cwd = typeof input.cwd === 'string' ? input.cwd : undefined
 
-          if (!command) return { success: false, content: 'run_command: missing command' }
+          if (!command) return { success: false, content: 'run_terminal_command: missing command' }
+          if (!rootPath) return { success: false, content: 'run_terminal_command: no project folder is open' }
 
-          const result = await window.api.runCommand(command, cwd)
+          const result = await window.api.runCommand(command, cwd, rootPath)
 
           const termPart: TerminalOutputPart = {
             type: 'terminal_output',

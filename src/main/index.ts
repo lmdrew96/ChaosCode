@@ -588,13 +588,24 @@ ipcMain.handle('terminal:kill', async (_event, id: string) => {
   terminals.delete(id)
 })
 
-ipcMain.handle('terminal:run-command', async (_event, command: string, cwd?: string) => {
+ipcMain.handle('terminal:run-command', async (_event, command: string, cwd?: string, rootPath?: string) => {
   return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+    let resolvedCwd: string
+    if (rootPath) {
+      try {
+        resolvedCwd = resolveSafePath(rootPath, cwd || '')
+      } catch (err) {
+        return resolve({ stdout: '', stderr: err instanceof Error ? err.message : String(err), exitCode: 1 })
+      }
+    } else {
+      resolvedCwd = cwd || process.env.HOME || '/'
+    }
+
     const shell = process.platform === 'win32' ? 'cmd' : (process.env.SHELL || '/bin/sh')
     const shellFlag = process.platform === 'win32' ? '/c' : '-c'
 
     const proc = spawn(shell, [shellFlag, command], {
-      cwd: cwd || process.env.HOME,
+      cwd: resolvedCwd,
       env: process.env,
     })
 

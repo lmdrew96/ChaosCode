@@ -68,7 +68,7 @@ export type Api = {
   onTerminalExit: (id: string, cb: (exitCode: number) => void) => () => void
 
   // Terminal — run command (for agents)
-  runCommand: (command: string, cwd?: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+  runCommand: (command: string, cwd?: string, rootPath?: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 }
 
 const api: Api = {
@@ -154,7 +154,7 @@ const api: Api = {
     return () => ipcRenderer.removeListener(channel, listener)
   },
 
-  runCommand: (command, cwd) => ipcRenderer.invoke('terminal:run-command', command, cwd),
+  runCommand: (command, cwd, rootPath) => ipcRenderer.invoke('terminal:run-command', command, cwd, rootPath),
 }
 
 contextBridge.exposeInMainWorld('api', api)
