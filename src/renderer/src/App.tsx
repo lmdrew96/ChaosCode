@@ -98,7 +98,7 @@ export default function App() {
     if (rootPath) refreshFileTree(rootPath)
   }, [rootPath])
 
-  const { agenticState, breakingIssue, dismissInterrupt, runAgenticTask } = useAgenticMode({
+  const { agenticState, breakingIssue, dismissInterrupt, cancelAgenticTask, runAgenticTask } = useAgenticMode({
     rootPath,
     fileTree,
     openFile,
@@ -152,6 +152,11 @@ export default function App() {
 
   /** Cancel the currently active LLM request */
   function handleCancel() {
+    if (agenticMode) {
+      void cancelAgenticTask()
+      return
+    }
+
     if (!activeRequestId.current) return
     window.api.cancelRequest(activeRequestId.current)
     activeRequestId.current = null

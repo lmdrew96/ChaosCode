@@ -6,6 +6,10 @@ export const demo = 1
 \`\`\`
 </FILE>`,
 
+  mixedToolAndFile: `<chaosplan>implement the feature</chaosplan>
+<tool_use name="run_check" id="check-1">{"scope":"ui"}</tool_use>
+<file path="src/demo.ts">export const demo = 1</file>`,
+
   traversalFileTag: `<file path="../secrets.txt">leak</file>`,
 
   absoluteFileTag: `<file path="/etc/passwd">x</file>`,

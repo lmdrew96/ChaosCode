@@ -8,12 +8,17 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "prompt-security:harness": "tsx src/renderer/src/services/agenticSecurity.test.ts"
+    "prompt-security:harness": "tsx src/renderer/src/services/agenticSecurity.test.ts",
+    "agentic-stream:harness": "tsx src/renderer/src/services/agenticStreamState.test.ts",
+    "agentic-parser:harness": "tsx src/renderer/src/services/agenticParser.tools.test.ts",
+    "tool-registry:harness": "tsx src/renderer/src/services/toolRegistry.test.ts",
+    "agentic-loop:harness": "tsx src/renderer/src/services/agenticExecutionLoop.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "electron": "^33.3.1",
@@ -30,6 +35,8 @@
     "dotenv": "^16.4.7",
     "monaco-editor": "^0.55.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1"
   }
 }

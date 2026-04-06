@@ -12,7 +12,25 @@ export interface ImagePart {
   url: string
 }
 
-export type MessagePart = TextPart | ImagePart
+export interface ToolUsePart {
+  type: 'tool_use'
+  toolUse: {
+    id: string
+    name: string
+    input: Record<string, unknown>
+  }
+}
+
+export interface ToolResultPart {
+  type: 'tool_result'
+  toolResult: {
+    toolUseId: string
+    content: string
+    isError?: boolean
+  }
+}
+
+export type MessagePart = TextPart | ImagePart | ToolUsePart | ToolResultPart
 export type MessageContent = string | MessagePart[]
 
 // ─── Context items ────────────────────────────────────────────────────────────
@@ -88,6 +106,11 @@ export interface OpenFile {
 export function contentToString(content: MessageContent): string {
   if (typeof content === 'string') return content
   return content
-    .map((p) => (p.type === 'text' ? p.text : `[image: ${p.url}]`))
+    .map((p) => {
+      if (p.type === 'text') return p.text
+      if (p.type === 'image') return `[image: ${p.url}]`
+      if (p.type === 'tool_use') return `[tool_use: ${p.toolUse.name}]`
+      return `[tool_result: ${p.toolResult.isError ? 'error' : 'ok'}] ${p.toolResult.content}`
+    })
     .join('\n')
 }

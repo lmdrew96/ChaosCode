@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
-import type { Message, LLMTarget, ReviewEntry, OpenFile } from '@/types'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
-import { contentToString } from '@/types'
+import './markdown.css'
 
 interface Props {
   messages: Message[]
@@ -23,7 +26,128 @@ interface Props {
 function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user'
   const isHaiku = msg.source === 'haiku'
-  const content = contentToString(msg.content)
+  const parts: MessagePart[] = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : msg.content
+
+  function renderText(text: string) {
+    if (!text) return <span className="animate-pulse opacity-40">▍</span>
+
+    return (
+      <div className="markdown-content">
+        <ReactMarkdown
+          components={{
+            code({ inline, className, children, ...props }: any) {
+              const match = /language-(\w+)/.exec(className || '')
+              const language = match ? match[1] : 'text'
+
+              if (inline) {
+                return (
+                  <code className="bg-white/10 px-1.5 py-0.5 rounded text-[11px] font-mono" {...props}>
+                    {children}
+                  </code>
+                )
+              }
+
+              return (
+                <div className="my-2 rounded-lg overflow-hidden">
+                  <SyntaxHighlighter
+                    language={language}
+                    style={atomDark}
+                    customStyle={{
+                      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                      padding: '12px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      lineHeight: '1.5',
+                    }}
+                    {...props}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                </div>
+              )
+            },
+            a({ children, ...props }: any) {
+              return (
+                <a
+                  className="text-accent-gemini/80 hover:text-accent-gemini underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  {...props}
+                >
+                  {children}
+                </a>
+              )
+            },
+            ul({ children, ...props }: any) {
+              return (
+                <ul className="list-disc list-inside my-2 space-y-1" {...props}>
+                  {children}
+                </ul>
+              )
+            },
+            ol({ children, ...props }: any) {
+              return (
+                <ol className="list-decimal list-inside my-2 space-y-1" {...props}>
+                  {children}
+                </ol>
+              )
+            },
+            strong({ children, ...props }: any) {
+              return (
+                <strong className="font-semibold text-white/95" {...props}>
+                  {children}
+                </strong>
+              )
+            },
+            em({ children, ...props }: any) {
+              return (
+                <em className="italic text-white/85" {...props}>
+                  {children}
+                </em>
+              )
+            },
+            blockquote({ children, ...props }: any) {
+              return (
+                <blockquote className="border-l-2 border-white/20 pl-3 my-2 opacity-75" {...props}>
+                  {children}
+                </blockquote>
+              )
+            },
+            h1({ children, ...props }: any) {
+              return (
+                <h1 className="text-sm font-bold mt-3 mb-2" {...props}>
+                  {children}
+                </h1>
+              )
+            },
+            h2({ children, ...props }: any) {
+              return (
+                <h2 className="text-[12px] font-bold mt-2.5 mb-1.5" {...props}>
+                  {children}
+                </h2>
+              )
+            },
+            h3({ children, ...props }: any) {
+              return (
+                <h3 className="text-[11px] font-semibold mt-2 mb-1" {...props}>
+                  {children}
+                </h3>
+              )
+            },
+            p({ children, ...props }: any) {
+              return (
+                <p className="my-1" {...props}>
+                  {children}
+                </p>
+              )
+            },
+          }}
+        >
+          {text}
+        </ReactMarkdown>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
@@ -34,14 +158,62 @@ function MessageBubble({ msg }: { msg: Message }) {
           {isHaiku ? 'Haiku' : 'Sonnet'}
         </span>
       )}
-      <div className={`max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words ${
+      <div className={`max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed break-words ${
         isUser
           ? 'bg-white/10 text-white/90'
           : isHaiku
             ? 'bg-[#1a2a3a] border border-accent-gemini/20 text-white/85'
             : 'bg-[#2a1f0a] border border-accent-claude/20 text-white/85'
       }`}>
-        {content || <span className="animate-pulse opacity-40">▍</span>}
+        <div className="flex flex-col gap-2">
+          {parts.map((part, index) => {
+            if (part.type === 'text') {
+              return <div key={`${msg.id}-text-${index}`}>{renderText(part.text)}</div>
+            }
+
+            if (part.type === 'image') {
+              return (
+                <div
+                  key={`${msg.id}-image-${index}`}
+                  className="text-[10px] rounded border border-white/10 bg-black/20 px-2 py-1 text-white/60"
+                >
+                  image: {part.url}
+                </div>
+              )
+            }
+
+            if (part.type === 'tool_use') {
+              return (
+                <div
+                  key={`${msg.id}-tool-use-${part.toolUse.id}`}
+                  className="rounded border border-accent-gemini/30 bg-accent-gemini/5 px-2 py-1.5"
+                >
+                  <div className="text-[9px] uppercase tracking-wider text-accent-gemini/70">Tool Call</div>
+                  <div className="text-[11px] text-white/85">{part.toolUse.name}</div>
+                  <div className="text-[10px] text-white/50 mt-0.5">{String(part.toolUse.input.path ?? '')}</div>
+                </div>
+              )
+            }
+
+            return (
+              <div
+                key={`${msg.id}-tool-result-${part.toolResult.toolUseId}-${index}`}
+                className={`rounded border px-2 py-1.5 ${
+                  part.toolResult.isError
+                    ? 'border-red-500/30 bg-red-950/30'
+                    : 'border-accent-claude/30 bg-accent-claude/5'
+                }`}
+              >
+                <div className={`text-[9px] uppercase tracking-wider ${part.toolResult.isError ? 'text-red-300/80' : 'text-accent-claude/70'}`}>
+                  Tool Result
+                </div>
+                <div className={`text-[10px] mt-0.5 leading-relaxed ${part.toolResult.isError ? 'text-red-200/80' : 'text-white/70'}`}>
+                  {part.toolResult.content}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -71,14 +243,45 @@ export default function LLMPanel({
 }: Props) {
   const [input, setInput] = useState('')
   const [showReviews, setShowReviews] = useState(false)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const autoFollowRef = useRef(true)
   const isAgenticBusy = agenticState.phase === 'implementing' || agenticState.phase === 'reviewing' || agenticState.phase === 'planning'
   const isBusy = haikuStreaming || sonnetStreaming || isAgenticBusy
 
+  const isNearBottom = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return true
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    return distanceFromBottom <= 80
+  }, [])
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior })
+  }, [])
+
+  const handleMessagesScroll = useCallback(() => {
+    const nearBottom = isNearBottom()
+    autoFollowRef.current = nearBottom
+    if (nearBottom) {
+      setShowJumpToLatest(false)
+    }
+  }, [isNearBottom])
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (autoFollowRef.current || isNearBottom()) {
+      autoFollowRef.current = true
+      setShowJumpToLatest(false)
+      scrollToBottom('smooth')
+      return
+    }
+
+    if (messages.length > 0) {
+      setShowJumpToLatest(true)
+    }
+  }, [messages, isNearBottom, scrollToBottom])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -235,18 +438,37 @@ export default function LLMPanel({
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
-            <p className="text-[11px] text-white/15 text-center leading-relaxed">
-              Haiku Planner plans.<br />Sonnet Reviewer reviews.<br />Haiku Implementer writes.<br />Sonnet Final Reviewer signs off.
-            </p>
-          </div>
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleMessagesScroll}
+          className="h-full overflow-y-auto px-3 py-3 flex flex-col gap-3"
+        >
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
+              <p className="text-[11px] text-white/15 text-center leading-relaxed">
+                Haiku Planner plans.<br />Sonnet Reviewer reviews.<br />Haiku Implementer writes.<br />Sonnet Final Reviewer signs off.
+              </p>
+            </div>
+          )}
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} msg={msg} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {showJumpToLatest && (
+          <button
+            onClick={() => {
+              autoFollowRef.current = true
+              setShowJumpToLatest(false)
+              scrollToBottom('smooth')
+            }}
+            className="absolute bottom-3 right-3 px-2 py-1 text-[10px] rounded-md border border-white/20 bg-surface-1/95 text-white/70 hover:text-white/90 hover:border-white/35 transition-colors"
+          >
+            Jump to latest
+          </button>
         )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
-        ))}
-        <div ref={bottomRef} />
       </div>
 
       {/* Review log toggle */}
@@ -316,14 +538,13 @@ export default function LLMPanel({
             onKeyDown={handleKeyDown}
             placeholder={
               isBusy
-                ? isAgenticBusy ? 'Agentic task running…' : 'Waiting for response…'
+                ? isAgenticBusy ? 'Agentic task running... You can keep typing.' : 'Streaming response... You can keep typing.'
                 : agenticMode
                   ? 'Describe a task for Haiku Implementer to implement…'
                   : 'Message (Enter to send, Shift+Enter for newline)'
             }
-            disabled={isBusy}
             rows={1}
-            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/20 resize-none outline-none leading-relaxed max-h-32 overflow-y-auto disabled:opacity-40"
+            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/20 resize-none outline-none leading-relaxed max-h-32 overflow-y-auto"
             style={{ minHeight: '20px' }}
           />
           {isBusy ? (

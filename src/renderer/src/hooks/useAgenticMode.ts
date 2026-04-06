@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
-import { extractCompletedFiles, parseReview } from '@/services/agenticParser'
+import { parseReview, parseStreamToolCalls } from '@/services/agenticParser'
+import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
-import type { FileDiffSummary, FileNode, Message, OpenFile, ReviewEntry } from '@/types'
+import { ToolRegistry } from '@/services/toolRegistry'
+import type { FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry } from '@/types'
 
 function toLines(text: string): string[] {
   if (!text) return []
@@ -109,6 +111,58 @@ export function useAgenticMode({
   // Track pending Sonnet review promises so we can await them all at the end
   const reviewPromises = useRef<Promise<void>[]>([])
   const originalContents = useRef<Record<string, string>>({})
+  // Serialize operations per file path to avoid write/review races on the same file
+  const fileOperationQueues = useRef<Record<string, Promise<void>>>({})
+  // Avoid processing the same streamed file block multiple times (incremental + post-scan)
+  const lastQueuedContentByFile = useRef<Record<string, string>>({})
+
+  function queueFileOperation(filePath: string, op: () => Promise<void>): Promise<void> {
+    const prev = fileOperationQueues.current[filePath] ?? Promise.resolve()
+    const next = prev
+      .catch(() => {
+        // Keep queue moving even if previous operation failed.
+      })
+      .then(op)
+
+    fileOperationQueues.current[filePath] = next.finally(() => {
+      if (fileOperationQueues.current[filePath] === next) {
+        delete fileOperationQueues.current[filePath]
+      }
+    })
+
+    return next
+  }
+
+  function appendMessagePart(messageId: string, part: MessagePart): void {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m
+        const parts = typeof m.content === 'string' ? [{ type: 'text', text: m.content } as MessagePart] : [...m.content]
+        return { ...m, content: [...parts, part] }
+      })
+    )
+  }
+
+  function appendTextToMessage(messageId: string, token: string): void {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m
+        if (typeof m.content === 'string') {
+          return { ...m, content: m.content + token }
+        }
+
+        const parts = [...m.content]
+        const last = parts[parts.length - 1]
+        if (!last || last.type !== 'text') {
+          parts.push({ type: 'text', text: token })
+          return { ...m, content: parts }
+        }
+
+        parts[parts.length - 1] = { ...last, text: last.text + token }
+        return { ...m, content: parts }
+      })
+    )
+  }
 
   async function ensureOriginalContent(absPath: string): Promise<string> {
     const cached = originalContents.current[absPath]
@@ -179,6 +233,23 @@ export function useAgenticMode({
     setBreakingIssue(null)
     setAgenticState((s) => ({ ...s, phase: 'idle' }))
     interruptRef.current = false
+  }, [])
+
+  const cancelAgenticTask = useCallback(async () => {
+    interruptRef.current = true
+    const requestId = activeAgenticRequestId.current
+    if (requestId) {
+      try {
+        await window.api.cancelRequest(requestId)
+      } catch (err) {
+        console.error('Failed to cancel active agentic request:', err)
+      }
+    }
+    activeAgenticRequestId.current = null
+    setAgenticState((s) => {
+      if (s.phase === 'idle' || s.phase === 'done' || s.phase === 'interrupted') return s
+      return { ...s, phase: 'interrupted', currentFilePath: null }
+    })
   }, [])
 
   /**
@@ -259,7 +330,7 @@ export function useAgenticMode({
   }
 
   /**
-    * Main agentic entry point. Streams Haiku, parses files, fires reviews in parallel.
+    * Main agentic entry point. Streams Haiku, parses tool calls, executes tools in parallel.
    */
   const runAgenticTask = useCallback(
     async (userTask: string) => {
@@ -280,6 +351,7 @@ export function useAgenticMode({
       interruptRef.current = false
       reviewPromises.current = []
       setBreakingIssue(null)
+      lastQueuedContentByFile.current = {}
       setAgenticState({
         phase: 'planning',
         currentFilePath: null,
@@ -334,46 +406,118 @@ export function useAgenticMode({
       const haikuMsgId = uid()
       setMessages((prev) => [
         ...prev,
-        { id: haikuMsgId, role: 'assistant', source: 'haiku', content: '', timestamp: Date.now() },
+        {
+          id: haikuMsgId,
+          role: 'assistant',
+          source: 'haiku',
+          content: [{ type: 'text', text: '' }],
+          timestamp: Date.now(),
+        },
       ])
       setAgenticState((s) => ({ ...s, phase: 'implementing' }))
+
+      const registry = new ToolRegistry()
+      registry.register({
+        name: 'persist_and_review',
+        description: 'Persist a file and run Sonnet review on it',
+        execute: async (input) => {
+          const filePath = typeof input.path === 'string' ? input.path : ''
+          const content = typeof input.content === 'string' ? input.content : ''
+          if (!filePath || !content) {
+            return {
+              success: false,
+              content: 'persist_and_review requires string fields: path and content',
+            }
+          }
+
+          await queueFileOperation(filePath, async () => {
+            await persistFile(filePath, content)
+            onFileWritten(filePath)
+            await reviewFile(filePath, content, userTask)
+          })
+
+          return {
+            success: true,
+            content: `Wrote and reviewed ${filePath}`,
+          }
+        },
+      })
 
       // Accumulate stream
       let buffer = ''
       let processedUpTo = 0
 
-      const unsubscribeToken = window.api.onHaikuAgenticToken(requestId, (token) => {
-        buffer += token
-        setMessages((prev) =>
-          prev.map((m) => (m.id === haikuMsgId ? { ...m, content: buffer } : m))
-        )
+      const scheduleParsedCalls = (calls: ReturnType<typeof parseStreamToolCalls>['calls']) => {
+        const freshCalls = calls.filter((call) => {
+          if (call.name !== 'persist_and_review') return true
+          const filePath = typeof call.input.path === 'string' ? call.input.path : null
+          const content = typeof call.input.content === 'string' ? call.input.content : null
+          if (!filePath || content === null) return true
 
-        // Check for newly completed file blocks
-        if (!interruptRef.current) {
-          const slice = buffer.slice(processedUpTo)
-          const { files, consumed } = extractCompletedFiles(slice)
+          if (lastQueuedContentByFile.current[filePath] === content) {
+            return false
+          }
 
-          if (files.length > 0) {
-            processedUpTo += consumed
+          lastQueuedContentByFile.current[filePath] = content
+          return true
+        })
 
-            for (const file of files) {
-              if (interruptRef.current) break
+        if (freshCalls.length === 0) return
 
+        const scheduled = scheduleToolCalls({
+          calls: freshCalls,
+          registry,
+          onToolUse: (call) => {
+            const safeInput = call.name === 'persist_and_review'
+              ? { path: typeof call.input.path === 'string' ? call.input.path : '' }
+              : call.input
+
+            appendMessagePart(haikuMsgId, {
+              type: 'tool_use',
+              toolUse: {
+                id: call.id,
+                name: call.name,
+                input: safeInput,
+              },
+            })
+
+            if (call.name === 'persist_and_review' && typeof call.input.path === 'string') {
+              const filePath = call.input.path
               setAgenticState((s) => ({
                 ...s,
-                currentFilePath: file.path,
-                filesWritten: [...s.filesWritten, file.path],
+                currentFilePath: filePath,
+                filesWritten: s.filesWritten.includes(filePath)
+                  ? s.filesWritten
+                  : [...s.filesWritten, filePath],
               }))
-
-              // Write file (fire-and-forget, then notify)
-              persistFile(file.path, file.content)
-                .then(() => onFileWritten(file.path))
-                .catch(console.error)
-
-              // Start Sonnet review in parallel — do NOT await
-              const reviewPromise = reviewFile(file.path, file.content, userTask)
-              reviewPromises.current.push(reviewPromise)
             }
+          },
+          onToolResult: (call, result) => {
+            appendMessagePart(haikuMsgId, {
+              type: 'tool_result',
+              toolResult: {
+                toolUseId: call.id,
+                content: result.content,
+                isError: !result.success,
+              },
+            })
+          },
+        })
+
+        reviewPromises.current.push(...scheduled)
+      }
+
+      const unsubscribeToken = window.api.onHaikuAgenticToken(requestId, (token) => {
+        buffer += token
+        appendTextToMessage(haikuMsgId, token)
+
+        // Check for newly completed tool blocks
+        if (!interruptRef.current) {
+          const slice = buffer.slice(processedUpTo)
+          const parsed = parseStreamToolCalls(slice)
+          if (parsed.calls.length > 0) {
+            processedUpTo += parsed.consumed
+            scheduleParsedCalls(parsed.calls)
           }
         }
       })
@@ -398,21 +542,10 @@ export function useAgenticMode({
         activeAgenticRequestId.current = null
       }
 
-      // Post-stream full scan — catches any file blocks the incremental check may have missed
-      // (can happen if the last token contained the closing </file> tag)
+      // Post-stream full scan — catches any tool blocks the incremental check may have missed.
       if (!interruptRef.current) {
-        const { files: remaining } = extractCompletedFiles(buffer.slice(processedUpTo))
-        for (const file of remaining) {
-          if (interruptRef.current) break
-          setAgenticState((s) => ({
-            ...s,
-            filesWritten: s.filesWritten.includes(file.path)
-              ? s.filesWritten
-              : [...s.filesWritten, file.path],
-          }))
-          persistFile(file.path, file.content).then(() => onFileWritten(file.path)).catch(console.error)
-          reviewPromises.current.push(reviewFile(file.path, file.content, userTask))
-        }
+        const parsedRemaining = parseStreamToolCalls(buffer.slice(processedUpTo))
+        scheduleParsedCalls(parsedRemaining.calls)
       }
 
       // Wait for all Sonnet reviews to settle
@@ -432,6 +565,7 @@ export function useAgenticMode({
     agenticState,
     breakingIssue,
     dismissInterrupt,
+    cancelAgenticTask,
     runAgenticTask,
   }
 }

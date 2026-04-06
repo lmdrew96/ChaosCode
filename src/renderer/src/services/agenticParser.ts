@@ -9,6 +9,12 @@ export interface ReviewResult {
   fixedContent: string | null
 }
 
+export interface ParsedToolCall {
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+
 /**
  * Strips markdown code fences from file content.
  * Haiku often wraps content in ```lang ... ``` even inside <file> blocks.
@@ -55,6 +61,72 @@ export function extractCompletedFiles(text: string): {
   }
 
   return { files, consumed: lastEnd }
+}
+
+/**
+ * Parses completed tool call blocks from streamed text.
+ * Supports both:
+ * 1) <file path="...">...</file> (mapped to persist_and_review)
+ * 2) <tool_use name="..." id="...">{"json":true}</tool_use>
+ */
+export function parseStreamToolCalls(text: string): {
+  calls: ParsedToolCall[]
+  consumed: number
+} {
+  const entries: Array<{ start: number; end: number; call: ParsedToolCall }> = []
+
+  const filePattern = /<file\s+path\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/file>/gi
+  let fileMatch: RegExpExecArray | null
+  while ((fileMatch = filePattern.exec(text)) !== null) {
+    const raw = fileMatch[2].trim()
+    entries.push({
+      start: fileMatch.index,
+      end: fileMatch.index + fileMatch[0].length,
+      call: {
+        id: `file-${fileMatch.index}`,
+        name: 'persist_and_review',
+        input: {
+          path: fileMatch[1],
+          content: stripFences(raw),
+        },
+      },
+    })
+  }
+
+  const toolPattern = /<tool_use\s+name\s*=\s*["']([^"']+)["'](?:\s+id\s*=\s*["']([^"']+)["'])?\s*>([\s\S]*?)<\/tool_use>/gi
+  let toolMatch: RegExpExecArray | null
+  while ((toolMatch = toolPattern.exec(text)) !== null) {
+    const rawInput = toolMatch[3].trim()
+    let parsedInput: Record<string, unknown> = {}
+    if (rawInput.length > 0) {
+      try {
+        const value = JSON.parse(rawInput)
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          parsedInput = value as Record<string, unknown>
+        } else {
+          parsedInput = { value }
+        }
+      } catch {
+        parsedInput = { raw: rawInput }
+      }
+    }
+
+    entries.push({
+      start: toolMatch.index,
+      end: toolMatch.index + toolMatch[0].length,
+      call: {
+        id: toolMatch[2] || `tool-${toolMatch.index}`,
+        name: toolMatch[1],
+        input: parsedInput,
+      },
+    })
+  }
+
+  entries.sort((a, b) => a.start - b.start)
+  const calls = entries.map((entry) => entry.call)
+  const consumed = entries.length > 0 ? Math.max(...entries.map((entry) => entry.end)) : 0
+
+  return { calls, consumed }
 }
 
 /**

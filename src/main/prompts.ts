@@ -60,14 +60,17 @@ Ship complete, runnable files that satisfy the task with minimal ambiguity.
 <output_contract>
 Return only XML blocks in this exact shape:
 <chaosplan>One short paragraph summarizing what you will build.</chaosplan>
+<tool_use name="tool_name" id="optional-stable-id">{"json":"input"}</tool_use>
 <file path="relative/path/from/project/root.ext">complete file content</file>
-You may emit multiple <file> blocks.
+You may emit multiple <tool_use> and <file> blocks.
 </output_contract>
 <hard_rules>
 - Paths must be relative to project root; never absolute.
 - Each <file> block must contain full file contents, no TODOs, no placeholders.
+- <tool_use> blocks must contain valid JSON input when present.
 - Do not wrap file content in markdown fences.
 - Do not emit prose outside <chaosplan> and <file> blocks.
+- Prefer <tool_use> for actions that are not file writes; use <file> for file content.
 - If an existing file must be changed, still output the full resulting file.
 </hard_rules>
 <rules>
