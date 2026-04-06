@@ -3,6 +3,8 @@ import MonacoEditorPanel from '@/components/Editor/MonacoEditor'
 import FileTree from '@/components/FileTree/FileTree'
 import LLMPanel from '@/components/LLMPanel/LLMPanel'
 import { useAgenticMode } from '@/hooks/useAgenticMode'
+import { useTheme, type ThemePreference } from '@/hooks/useTheme'
+import { PANEL_HANDLE_WIDTH, useResizablePanels } from '@/hooks/useResizablePanels'
 import {
   openFileContextItem,
   fileTreeContextItem,
@@ -37,6 +39,12 @@ function uid() {
  */
 const HISTORY_CHAR_BUDGET = 40_000
 
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
+]
+
 function pruneMessages(msgs: Message[]): Message[] {
   if (msgs.length <= 1) return msgs
 
@@ -59,6 +67,8 @@ function pruneMessages(msgs: Message[]): Message[] {
 }
 
 export default function App() {
+  const layoutRef = useRef<HTMLDivElement>(null)
+  const { theme, setTheme, resolvedTheme } = useTheme()
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [rootName, setRootName] = useState<string | undefined>()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
@@ -71,6 +81,7 @@ export default function App() {
   const [agenticMode, setAgenticMode] = useState(false)
   const [haikuStreaming, setHaikuStreaming] = useState(false)
   const [sonnetStreaming, setSonnetStreaming] = useState(false)
+  const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, toggleCollapse, startResize } = useResizablePanels(layoutRef)
 
   // Refs to accumulate streamed content without extra re-renders
   const haikuMsgId = useRef<string | null>(null)
@@ -283,32 +294,60 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-surface-0 text-white select-none">
+    <div className="flex flex-col h-screen bg-surface-0 text-primary select-none">
       {/* Titlebar drag region */}
       <div
-        className="flex items-center h-10 px-4 flex-shrink-0 border-b border-white/5"
+        className="flex items-center h-10 px-4 flex-shrink-0 border-b border-border/70 bg-surface-0/95 backdrop-blur"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="ml-16 flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <span className="text-[11px] font-semibold tracking-widest text-white/30 uppercase">ChaosCode</span>
+          <span className="text-[11px] font-semibold tracking-widest text-secondary uppercase">ChaosCode</span>
           {openFile && (
             <>
-              <span className="text-white/15">›</span>
-              <span className="text-[11px] text-white/40 max-w-xs truncate">
+              <span className="text-border/70">›</span>
+              <span className="text-[11px] text-secondary max-w-xs truncate">
                 {openFile.path.split('/').pop()}
               </span>
             </>
           )}
         </div>
+
+        <div className="ml-auto flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <span className="text-[9px] uppercase tracking-[0.3em] text-subtle">Theme</span>
+          <div className="flex items-center rounded-full border border-border bg-surface-1 p-0.5 shadow-sm">
+            {THEME_OPTIONS.map(({ value, label }) => {
+              const isActive = theme === value
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setTheme(value)}
+                  title={value === 'system' ? `System theme (${resolvedTheme})` : `${label} theme`}
+                  className={`rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] transition-colors ${
+                    isActive
+                      ? 'bg-surface-3 text-primary shadow'
+                      : 'text-secondary hover:bg-surface-2 hover:text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Main 3-panel layout */}
-      <div className="flex flex-1 overflow-hidden">
+      <div ref={layoutRef} className="flex flex-1 overflow-hidden min-w-0">
         {/* Sidebar — File tree */}
-        <aside className="flex flex-col w-52 flex-shrink-0 border-r border-white/5 bg-surface-1 overflow-hidden">
+        <aside
+          className="flex flex-col flex-shrink-0 border-r border-border/70 bg-surface-1 overflow-hidden min-w-0"
+          style={{ width: leftCollapsed ? '0px' : `${leftWidth}px` }}
+        >
           <button
             onClick={handleOpenFolder}
-            className="flex items-center gap-2 px-3 py-2 text-[10px] text-white/30 hover:text-white/60 hover:bg-white/5 transition-colors border-b border-white/5 flex-shrink-0"
+            className="flex items-center gap-2 px-3 py-2 text-[10px] text-secondary hover:text-primary hover:bg-surface-2 transition-colors border-b border-border/70 flex-shrink-0"
           >
             <span>󰉋</span>
             <span className="uppercase tracking-widest">{rootName ?? 'Open Folder'}</span>
@@ -324,16 +363,62 @@ export default function App() {
           />
         </aside>
 
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize file tree panel"
+          onPointerDown={startResize('left')}
+          className="group relative flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
+          style={{ width: `${PANEL_HANDLE_WIDTH}px` }}
+        >
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70 group-hover:bg-accent-gemini/50 transition-colors" />
+          <button
+            type="button"
+            aria-label={leftCollapsed ? 'Expand file tree panel' : 'Collapse file tree panel'}
+            title={leftCollapsed ? 'Expand file tree panel' : 'Collapse file tree panel'}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => toggleCollapse('left')}
+            className="absolute left-1/2 top-1/2 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-1 text-[9px] text-secondary shadow-sm hover:border-border-strong hover:text-primary transition-colors"
+          >
+            {leftCollapsed ? '▶' : '◀'}
+          </button>
+        </div>
+
         {/* Editor — center */}
-        <main className="flex-1 overflow-hidden bg-surface-0">
+        <main className="flex-1 min-w-0 overflow-hidden bg-surface-0">
           <MonacoEditorPanel
             file={openFile}
             onChange={handleEditorChange}
+            theme={resolvedTheme}
           />
         </main>
 
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          onPointerDown={startResize('right')}
+          className="group relative flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
+          style={{ width: `${PANEL_HANDLE_WIDTH}px` }}
+        >
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70 group-hover:bg-accent-claude/50 transition-colors" />
+          <button
+            type="button"
+            aria-label={rightCollapsed ? 'Expand chat panel' : 'Collapse chat panel'}
+            title={rightCollapsed ? 'Expand chat panel' : 'Collapse chat panel'}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => toggleCollapse('right')}
+            className="absolute left-1/2 top-1/2 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-1 text-[9px] text-secondary shadow-sm hover:border-border-strong hover:text-primary transition-colors"
+          >
+            {rightCollapsed ? '◀' : '▶'}
+          </button>
+        </div>
+
         {/* Right panel — LLM chat */}
-        <aside className="flex flex-col w-96 flex-shrink-0 border-l border-white/5 bg-surface-1 overflow-hidden">
+        <aside
+          className="flex flex-col flex-shrink-0 border-l border-border/70 bg-surface-1 overflow-hidden min-w-0"
+          style={{ width: rightCollapsed ? '0px' : `${rightWidth}px` }}
+        >
           <LLMPanel
             messages={messages}
             reviews={reviews}
@@ -349,6 +434,7 @@ export default function App() {
             agenticState={agenticState}
             breakingIssue={breakingIssue}
             onDismissBreaking={dismissInterrupt}
+            theme={resolvedTheme}
           />
         </aside>
       </div>

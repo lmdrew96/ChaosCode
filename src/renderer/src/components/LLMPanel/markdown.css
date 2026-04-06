@@ -26,19 +26,19 @@
 
 .markdown-content th,
 .markdown-content td {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--border) / 0.8);
   padding: 0.5rem;
   text-align: left;
 }
 
 .markdown-content th {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgb(var(--surface-2) / 0.8);
   font-weight: bold;
 }
 
 .markdown-content hr {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgb(var(--border) / 0.8);
   margin: 0.5rem 0;
 }
 

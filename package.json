@@ -12,7 +12,9 @@
     "agentic-stream:harness": "tsx src/renderer/src/services/agenticStreamState.test.ts",
     "agentic-parser:harness": "tsx src/renderer/src/services/agenticParser.tools.test.ts",
     "tool-registry:harness": "tsx src/renderer/src/services/toolRegistry.test.ts",
-    "agentic-loop:harness": "tsx src/renderer/src/services/agenticExecutionLoop.test.ts"
+    "agentic-loop:harness": "tsx src/renderer/src/services/agenticExecutionLoop.test.ts",
+    "panel-resize:harness": "tsx src/renderer/src/hooks/useResizablePanels.test.ts",
+    "theme:harness": "tsx src/renderer/src/hooks/useTheme.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

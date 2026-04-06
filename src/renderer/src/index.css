@@ -2,6 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  --canvas: 248 250 252;
+  --surface-0: 255 255 255;
+  --surface-1: 241 245 249;
+  --surface-2: 226 232 240;
+  --surface-3: 203 213 225;
+  --surface-4: 148 163 184;
+  --border: 203 213 225;
+  --border-subtle: 226 232 240;
+  --border-strong: 148 163 184;
+  --text-primary: 15 23 42;
+  --text-secondary: 51 65 85;
+  --text-muted: 71 85 105;
+  --text-subtle: 100 116 139;
+  --accent-gemini: 37 99 235;
+  --accent-claude: 180 83 9;
+  --success: 22 163 74;
+  --danger: 220 38 38;
+}
+
+html[data-theme='dark'],
+html.dark {
+  color-scheme: dark;
+  --canvas: 15 15 15;
+  --surface-0: 15 15 15;
+  --surface-1: 26 26 26;
+  --surface-2: 36 36 36;
+  --surface-3: 46 46 46;
+  --surface-4: 56 56 56;
+  --border: 63 63 70;
+  --border-subtle: 45 45 45;
+  --border-strong: 82 82 91;
+  --text-primary: 245 245 245;
+  --text-secondary: 212 212 216;
+  --text-muted: 184 184 193;
+  --text-subtle: 161 161 170;
+  --accent-gemini: 96 165 250;
+  --accent-claude: 253 186 116;
+  --success: 74 222 128;
+  --danger: 248 113 113;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -15,10 +58,16 @@ html, body, #root {
 }
 
 body {
-  background-color: #0f0f0f;
-  color: #e0e0e0;
+  background-color: rgb(var(--canvas));
+  color: rgb(var(--text-primary));
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   -webkit-font-smoothing: antialiased;
+}
+
+body.is-panel-resizing,
+body.is-panel-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Scrollbar */
@@ -30,14 +79,26 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #383838;
+  background: rgb(var(--border-strong) / 0.75);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a4a4a;
+  background: rgb(var(--text-subtle) / 0.95);
+}
+
+::selection {
+  background: rgb(var(--accent-gemini) / 0.24);
+  color: rgb(var(--text-primary));
 }
 
 /* Monaco editor fix */
 .monaco-editor .margin {
   background-color: transparent !important;
 }
+
+.monaco-editor .minimap,
+.monaco-editor .minimap-slider,
+.monaco-editor .cursor {
+  opacity: 1 !important;
+}
+

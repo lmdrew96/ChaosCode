@@ -49,12 +49,12 @@ function TreeNode({
     return (
       <div>
         <button
-          className="flex items-center gap-1.5 w-full text-left py-0.5 px-2 text-xs text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors rounded"
+          className="flex items-center gap-1.5 w-full text-left py-0.5 px-2 text-xs text-secondary hover:text-primary hover:bg-surface-2 transition-colors rounded"
           style={{ paddingLeft: `${8 + indent}px` }}
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="text-white/30 text-[10px] w-3">{open ? '▾' : '▸'}</span>
-          <span className="text-white/40 text-[11px]">󰉋</span>
+          <span className="text-subtle text-[10px] w-3">{open ? '▾' : '▸'}</span>
+          <span className="text-muted text-[11px]">󰉋</span>
           <span className="truncate">{node.name}</span>
         </button>
         {open && node.children?.map((child) => (
@@ -77,15 +77,15 @@ function TreeNode({
     <div
       className={`group flex items-center gap-1 w-full text-left py-0.5 pr-1 text-xs rounded transition-colors ${
         isSelected
-          ? 'bg-white/10 text-white'
+          ? 'bg-surface-2 text-primary'
           : isPinned
-            ? 'bg-accent-claude/10 text-white/70'
-            : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+            ? 'bg-accent-claude/10 text-primary'
+            : 'text-secondary hover:text-primary hover:bg-surface-2'
       }`}
       style={{ paddingLeft: `${8 + indent + 12}px` }}
     >
       <button className="flex items-center gap-1.5 flex-1 min-w-0" onClick={() => onFileSelect(node)}>
-        <span className={`text-[11px] ${isPinned ? 'text-accent-claude/60' : 'text-white/30'}`}>
+        <span className={`text-[11px] ${isPinned ? 'text-accent-claude' : 'text-subtle'}`}>
           {getFileIcon(node.name)}
         </span>
         <span className="truncate">{node.name}</span>
@@ -98,7 +98,7 @@ function TreeNode({
             </span>
           )}
           {diff.removed > 0 && (
-            <span className="rounded px-1 py-0.5 bg-red-500/10 text-red-400">
+            <span className="rounded px-1 py-0.5 bg-danger/10 text-danger">
               -{diff.removed}
             </span>
           )}
@@ -110,8 +110,8 @@ function TreeNode({
           title={isPinned ? 'Remove from agent context' : 'Add to agent context'}
           className={`flex-shrink-0 px-1 text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity ${
             isPinned
-              ? 'text-accent-claude/70 bg-accent-claude/20'
-              : 'text-white/30 hover:text-white/60 bg-white/5'
+              ? 'text-accent-claude bg-accent-claude/20'
+              : 'text-secondary hover:text-primary bg-surface-2'
           }`}
         >
           {isPinned ? '✓ ctx' : '+ ctx'}
@@ -125,13 +125,13 @@ export default function FileTree({ nodes, selectedPath, pinnedPaths = [], fileDi
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {rootName && (
-        <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-white/20 border-b border-white/5 flex-shrink-0">
+        <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-subtle border-b border-border/70 flex-shrink-0">
           {rootName}
         </div>
       )}
       <div className="flex-1 overflow-y-auto py-1">
         {nodes.length === 0 ? (
-          <p className="px-3 py-4 text-[11px] text-white/20 text-center">No files</p>
+          <p className="px-3 py-4 text-[11px] text-muted text-center">No files</p>
         ) : (
           nodes.map((node) => (
             <TreeNode

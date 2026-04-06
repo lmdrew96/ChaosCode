@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme } from 'electron'
 import { join, dirname } from 'path'
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs'
 import * as dotenv from 'dotenv'
@@ -30,12 +30,14 @@ function toAnthropicMessages(messages: Array<{ role: string; content: string }>)
 }
 
 function createWindow(): BrowserWindow {
+   const backgroundColor = nativeTheme.shouldUseDarkColors ? '#0f0f0f' : '#f8fafc'
+
    const win = new BrowserWindow({
      width: 1400,
      height: 900,
      minWidth: 900,
      minHeight: 600,
-     backgroundColor: '#0f0f0f',
+      backgroundColor,
      titleBarStyle: 'hiddenInset',
      trafficLightPosition: { x: 16, y: 16 },
      webPreferences: {

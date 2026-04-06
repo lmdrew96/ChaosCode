@@ -2,8 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
+import type { ResolvedTheme } from '@/hooks/useTheme'
 import './markdown.css'
 
 interface Props {
@@ -21,12 +23,14 @@ interface Props {
   agenticState: AgenticState
   breakingIssue: BreakingIssue | null
   onDismissBreaking: () => void
+  theme: ResolvedTheme
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
   const isUser = msg.role === 'user'
   const isHaiku = msg.source === 'haiku'
   const parts: MessagePart[] = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }] : msg.content
+  const syntaxTheme = theme === 'dark' ? atomDark : vs
 
   function renderText(text: string) {
     if (!text) return <span className="animate-pulse opacity-40">▍</span>
@@ -41,7 +45,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 
               if (inline) {
                 return (
-                  <code className="bg-white/10 px-1.5 py-0.5 rounded text-[11px] font-mono" {...props}>
+                  <code className="bg-surface-2 px-1.5 py-0.5 rounded text-[11px] font-mono text-primary" {...props}>
                     {children}
                   </code>
                 )
@@ -51,9 +55,9 @@ function MessageBubble({ msg }: { msg: Message }) {
                 <div className="my-2 rounded-lg overflow-hidden">
                   <SyntaxHighlighter
                     language={language}
-                    style={atomDark}
+                    style={syntaxTheme}
                     customStyle={{
-                      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                      backgroundColor: theme === 'dark' ? 'rgba(15, 15, 15, 0.55)' : 'rgba(255, 255, 255, 0.95)',
                       padding: '12px',
                       borderRadius: '6px',
                       fontSize: '11px',
@@ -69,7 +73,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             a({ children, ...props }: any) {
               return (
                 <a
-                  className="text-accent-gemini/80 hover:text-accent-gemini underline"
+                  className="text-accent-gemini hover:text-accent-gemini/80 underline"
                   target="_blank"
                   rel="noopener noreferrer"
                   {...props}
@@ -94,21 +98,21 @@ function MessageBubble({ msg }: { msg: Message }) {
             },
             strong({ children, ...props }: any) {
               return (
-                <strong className="font-semibold text-white/95" {...props}>
+                <strong className="font-semibold text-primary" {...props}>
                   {children}
                 </strong>
               )
             },
             em({ children, ...props }: any) {
               return (
-                <em className="italic text-white/85" {...props}>
+                <em className="italic text-secondary" {...props}>
                   {children}
                 </em>
               )
             },
             blockquote({ children, ...props }: any) {
               return (
-                <blockquote className="border-l-2 border-white/20 pl-3 my-2 opacity-75" {...props}>
+                <blockquote className="border-l-2 border-border pl-3 my-2 text-secondary" {...props}>
                   {children}
                 </blockquote>
               )
@@ -136,7 +140,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             },
             p({ children, ...props }: any) {
               return (
-                <p className="my-1" {...props}>
+                <p className="my-1 text-primary" {...props}>
                   {children}
                 </p>
               )
@@ -153,17 +157,17 @@ function MessageBubble({ msg }: { msg: Message }) {
     <div className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
       {!isUser && (
         <span className={`text-[10px] font-semibold uppercase tracking-wider px-1 ${
-          isHaiku ? 'text-accent-gemini/70' : 'text-accent-claude/70'
+          isHaiku ? 'text-accent-gemini' : 'text-accent-claude'
         }`}>
           {isHaiku ? 'Haiku' : 'Sonnet'}
         </span>
       )}
       <div className={`max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed break-words ${
         isUser
-          ? 'bg-white/10 text-white/90'
+          ? 'bg-surface-2 text-primary border border-border'
           : isHaiku
-            ? 'bg-[#1a2a3a] border border-accent-gemini/20 text-white/85'
-            : 'bg-[#2a1f0a] border border-accent-claude/20 text-white/85'
+            ? 'bg-accent-gemini/10 border border-accent-gemini/25 text-primary'
+            : 'bg-accent-claude/10 border border-accent-claude/25 text-primary'
       }`}>
         <div className="flex flex-col gap-2">
           {parts.map((part, index) => {
@@ -175,7 +179,7 @@ function MessageBubble({ msg }: { msg: Message }) {
               return (
                 <div
                   key={`${msg.id}-image-${index}`}
-                  className="text-[10px] rounded border border-white/10 bg-black/20 px-2 py-1 text-white/60"
+                  className="text-[10px] rounded border border-border bg-surface-2 px-2 py-1 text-secondary"
                 >
                   image: {part.url}
                 </div>
@@ -186,11 +190,11 @@ function MessageBubble({ msg }: { msg: Message }) {
               return (
                 <div
                   key={`${msg.id}-tool-use-${part.toolUse.id}`}
-                  className="rounded border border-accent-gemini/30 bg-accent-gemini/5 px-2 py-1.5"
+                  className="rounded border border-accent-gemini/25 bg-accent-gemini/10 px-2 py-1.5"
                 >
-                  <div className="text-[9px] uppercase tracking-wider text-accent-gemini/70">Tool Call</div>
-                  <div className="text-[11px] text-white/85">{part.toolUse.name}</div>
-                  <div className="text-[10px] text-white/50 mt-0.5">{String(part.toolUse.input.path ?? '')}</div>
+                  <div className="text-[9px] uppercase tracking-wider text-accent-gemini">Tool Call</div>
+                  <div className="text-[11px] text-primary">{part.toolUse.name}</div>
+                  <div className="text-[10px] text-muted mt-0.5">{String(part.toolUse.input.path ?? '')}</div>
                 </div>
               )
             }
@@ -200,14 +204,14 @@ function MessageBubble({ msg }: { msg: Message }) {
                 key={`${msg.id}-tool-result-${part.toolResult.toolUseId}-${index}`}
                 className={`rounded border px-2 py-1.5 ${
                   part.toolResult.isError
-                    ? 'border-red-500/30 bg-red-950/30'
-                    : 'border-accent-claude/30 bg-accent-claude/5'
+                    ? 'border-danger/30 bg-danger/10'
+                    : 'border-accent-claude/25 bg-accent-claude/10'
                 }`}
               >
-                <div className={`text-[9px] uppercase tracking-wider ${part.toolResult.isError ? 'text-red-300/80' : 'text-accent-claude/70'}`}>
+                <div className={`text-[9px] uppercase tracking-wider ${part.toolResult.isError ? 'text-danger' : 'text-accent-claude'}`}>
                   Tool Result
                 </div>
-                <div className={`text-[10px] mt-0.5 leading-relaxed ${part.toolResult.isError ? 'text-red-200/80' : 'text-white/70'}`}>
+                <div className={`text-[10px] mt-0.5 leading-relaxed ${part.toolResult.isError ? 'text-danger/90' : 'text-secondary'}`}>
                   {part.toolResult.content}
                 </div>
               </div>
@@ -240,6 +244,7 @@ export default function LLMPanel({
   agenticState,
   breakingIssue,
   onDismissBreaking,
+  theme,
 }: Props) {
   const [input, setInput] = useState('')
   const [showReviews, setShowReviews] = useState(false)
@@ -303,25 +308,25 @@ export default function LLMPanel({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 flex-shrink-0">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/70 flex-shrink-0 bg-surface-1/95 backdrop-blur">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-white/20">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-subtle">
             {agenticMode ? 'Agentic' : 'Chat'}
           </span>
           <button
             onClick={() => onAgenticModeChange(!agenticMode)}
             title={agenticMode ? 'Switch to chat mode' : 'Switch to agentic mode'}
             className={`relative w-7 h-4 rounded-full transition-colors flex-shrink-0 ${
-              agenticMode ? 'bg-accent-gemini/40' : 'bg-white/10'
+              agenticMode ? 'bg-accent-gemini/40' : 'bg-surface-2'
             }`}
           >
             <span className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${
-              agenticMode ? 'left-3.5 bg-accent-gemini' : 'left-0.5 bg-white/30'
+              agenticMode ? 'left-3.5 bg-accent-gemini' : 'left-0.5 bg-surface-4'
             }`} />
           </button>
         </div>
         {!agenticMode && (
-          <div className="flex gap-1 bg-white/5 rounded-md p-0.5">
+          <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border/70">
             {TARGETS.map(({ value, label }) => (
               <button
                 key={value}
@@ -332,8 +337,8 @@ export default function LLMPanel({
                       ? 'bg-accent-gemini/20 text-accent-gemini'
                       : value === 'sonnet'
                         ? 'bg-accent-claude/20 text-accent-claude'
-                        : 'bg-white/15 text-white/80'
-                    : 'text-white/30 hover:text-white/50'
+                        : 'bg-surface-3 text-primary'
+                    : 'text-secondary hover:text-primary'
                 }`}
               >
                 {label}
@@ -344,34 +349,34 @@ export default function LLMPanel({
       </div>
 
       {agenticMode && (
-        <div className="px-3 py-2 border-b border-white/5 text-[10px] text-white/35 leading-relaxed">
-          <span className="uppercase tracking-wider text-white/20 mr-2">Workflow</span>
-          <span className="text-accent-gemini/70">Haiku Planner</span>
-          <span className="mx-1 text-white/15">→</span>
-          <span className="text-accent-claude/70">Sonnet Reviewer</span>
-          <span className="mx-1 text-white/15">→</span>
-          <span className="text-accent-gemini/70">Haiku Implementer</span>
-          <span className="mx-1 text-white/15">→</span>
-          <span className="text-accent-claude/70">Sonnet Final Reviewer</span>
+        <div className="px-3 py-2 border-b border-border/70 text-[10px] text-secondary leading-relaxed">
+          <span className="uppercase tracking-wider text-subtle mr-2">Workflow</span>
+          <span className="text-accent-gemini">Haiku Planner</span>
+          <span className="mx-1 text-subtle">→</span>
+          <span className="text-accent-claude">Sonnet Reviewer</span>
+          <span className="mx-1 text-subtle">→</span>
+          <span className="text-accent-gemini">Haiku Implementer</span>
+          <span className="mx-1 text-subtle">→</span>
+          <span className="text-accent-claude">Sonnet Final Reviewer</span>
         </div>
       )}
 
       {/* Breaking issue interrupt alert */}
       {breakingIssue && (
-        <div className="mx-2 mt-2 p-3 bg-red-950/60 border border-red-500/30 rounded-lg flex-shrink-0">
+        <div className="mx-2 mt-2 p-3 bg-danger/10 border border-danger/30 rounded-lg flex-shrink-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider mb-1">
+              <p className="text-[10px] font-semibold text-danger uppercase tracking-wider mb-1">
                 ⚠ Sonnet interrupted — breaking issue
               </p>
-              <p className="text-[10px] text-white/50 truncate">{breakingIssue.filePath}</p>
+              <p className="text-[10px] text-muted truncate">{breakingIssue.filePath}</p>
               {breakingIssue.issues.map((issue, i) => (
-                <p key={i} className="text-[11px] text-red-300/80 mt-1 leading-relaxed">{issue}</p>
+                <p key={i} className="text-[11px] text-danger/90 mt-1 leading-relaxed">{issue}</p>
               ))}
             </div>
             <button
               onClick={onDismissBreaking}
-              className="text-[10px] text-white/30 hover:text-white/60 flex-shrink-0 mt-0.5"
+              className="text-[10px] text-subtle hover:text-primary flex-shrink-0 mt-0.5"
             >
               ✕
             </button>
@@ -381,16 +386,16 @@ export default function LLMPanel({
 
       {/* Agentic progress bar */}
       {agenticMode && isAgenticBusy && (
-        <div className="px-3 py-2 border-b border-white/5 flex-shrink-0">
+        <div className="px-3 py-2 border-b border-border/70 flex-shrink-0">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-accent-gemini/70 flex items-center gap-1">
+            <span className="text-[10px] text-accent-gemini flex items-center gap-1">
               <span className="animate-pulse">●</span>
               {agenticState.phase === 'planning' && 'Haiku Planner planning…'}
               {agenticState.phase === 'implementing' && `Haiku Implementer writing${agenticState.currentFilePath ? `: ${agenticState.currentFilePath.split('/').pop()}` : '…'}`}
               {agenticState.phase === 'reviewing' && 'Sonnet Reviewer reviewing all files…'}
             </span>
             {agenticState.filesWritten.length > 0 && (
-              <span className="text-[10px] text-white/20">
+              <span className="text-[10px] text-subtle">
                 {agenticState.filesWritten.length} file{agenticState.filesWritten.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -398,21 +403,21 @@ export default function LLMPanel({
 
           {agenticState.reviewingFiles.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-accent-claude/70 flex items-center gap-1 shrink-0">
+              <span className="text-[10px] text-accent-claude flex items-center gap-1 shrink-0">
                 <span className="animate-pulse">●</span>
                 Sonnet Final Reviewer reviewing {agenticState.reviewingFiles.length} file{agenticState.reviewingFiles.length !== 1 ? 's' : ''}
               </span>
               {agenticState.reviewingFiles.slice(0, 3).map((filePath) => (
                 <span
                   key={filePath}
-                  className="px-1.5 py-0.5 text-[9px] rounded bg-accent-claude/10 border border-accent-claude/20 text-accent-claude/80 truncate max-w-[10rem]"
+                  className="px-1.5 py-0.5 text-[9px] rounded bg-accent-claude/10 border border-accent-claude/25 text-accent-claude truncate max-w-[10rem]"
                   title={filePath}
                 >
                   {filePath.split('/').pop()}
                 </span>
               ))}
               {agenticState.reviewingFiles.length > 3 && (
-                <span className="px-1.5 py-0.5 text-[9px] rounded bg-white/5 text-white/30">
+                <span className="px-1.5 py-0.5 text-[9px] rounded bg-surface-2 text-secondary">
                   +{agenticState.reviewingFiles.length - 3}
                 </span>
               )}
@@ -423,14 +428,14 @@ export default function LLMPanel({
 
       {/* Chat status bar */}
       {!agenticMode && (haikuStreaming || sonnetStreaming) && (
-        <div className="flex gap-3 px-3 py-1.5 bg-white/3 border-b border-white/5 flex-shrink-0">
+        <div className="flex gap-3 px-3 py-1.5 bg-surface-2/70 border-b border-border/70 flex-shrink-0">
           {haikuStreaming && (
-            <span className="text-[10px] text-accent-gemini/70 flex items-center gap-1">
+            <span className="text-[10px] text-accent-gemini flex items-center gap-1">
               <span className="animate-pulse">●</span> Haiku writing…
             </span>
           )}
           {sonnetStreaming && (
-            <span className="text-[10px] text-accent-claude/70 flex items-center gap-1">
+            <span className="text-[10px] text-accent-claude flex items-center gap-1">
               <span className="animate-pulse">●</span> Sonnet reviewing…
             </span>
           )}
@@ -446,13 +451,13 @@ export default function LLMPanel({
         >
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
-              <p className="text-[11px] text-white/15 text-center leading-relaxed">
+              <p className="text-[11px] text-muted text-center leading-relaxed">
                 Haiku Planner plans.<br />Sonnet Reviewer reviews.<br />Haiku Implementer writes.<br />Sonnet Final Reviewer signs off.
               </p>
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} msg={msg} />
+            <MessageBubble key={msg.id} msg={msg} theme={theme} />
           ))}
           <div ref={bottomRef} />
         </div>
@@ -464,7 +469,7 @@ export default function LLMPanel({
               setShowJumpToLatest(false)
               scrollToBottom('smooth')
             }}
-            className="absolute bottom-3 right-3 px-2 py-1 text-[10px] rounded-md border border-white/20 bg-surface-1/95 text-white/70 hover:text-white/90 hover:border-white/35 transition-colors"
+            className="absolute bottom-3 right-3 px-2 py-1 text-[10px] rounded-md border border-border/70 bg-surface-1/95 text-secondary hover:text-primary hover:border-border-strong transition-colors"
           >
             Jump to latest
           </button>
@@ -475,17 +480,17 @@ export default function LLMPanel({
       {reviews.length > 0 && (
         <button
           onClick={() => setShowReviews((v) => !v)}
-          className="flex items-center justify-between px-3 py-1.5 border-t border-white/5 text-[10px] text-white/30 hover:text-white/50 transition-colors flex-shrink-0"
+          className="flex items-center justify-between px-3 py-1.5 border-t border-border/70 text-[10px] text-secondary hover:text-primary transition-colors flex-shrink-0"
         >
           <span className="flex items-center gap-2">
             <span className="uppercase tracking-wider">Review Log</span>
             {breakingReviews > 0 && (
-              <span className="px-1 bg-red-500/20 text-red-400 rounded text-[9px]">
+              <span className="px-1 bg-danger/10 text-danger rounded text-[9px]">
                 {breakingReviews} breaking
               </span>
             )}
             {pendingReviews > 0 && (
-              <span className="px-1 bg-white/10 rounded text-[9px]">
+              <span className="px-1 bg-surface-2 rounded text-[9px] text-primary">
                 {pendingReviews} minor
               </span>
             )}
@@ -495,12 +500,12 @@ export default function LLMPanel({
       )}
 
       {showReviews && (
-        <div className="max-h-32 overflow-y-auto border-t border-white/5 flex-shrink-0">
+        <div className="max-h-32 overflow-y-auto border-t border-border/70 flex-shrink-0">
           {reviews.map((r) => (
             <div
               key={r.id}
-              className={`px-3 py-1.5 text-[10px] border-b border-white/5 last:border-0 ${
-                r.severity === 'breaking' ? 'text-red-400/80' : 'text-white/40'
+              className={`px-3 py-1.5 text-[10px] border-b border-border/70 last:border-0 ${
+                r.severity === 'breaking' ? 'text-danger' : 'text-secondary'
               }`}
             >
               <span className="uppercase tracking-wider mr-2 opacity-60">
@@ -518,7 +523,7 @@ export default function LLMPanel({
           {pinnedFiles.map((f) => (
             <span
               key={f.path}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] bg-accent-claude/10 border border-accent-claude/20 text-accent-claude/70 rounded"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] bg-accent-claude/10 border border-accent-claude/25 text-accent-claude rounded"
               title={f.path}
             >
               <span className="opacity-60">@</span>
@@ -529,8 +534,8 @@ export default function LLMPanel({
       )}
 
       {/* Input */}
-      <div className="flex-shrink-0 border-t border-white/5 p-2">
-        <div className="flex items-end gap-2 bg-white/5 rounded-lg p-2">
+      <div className="flex-shrink-0 border-t border-border/70 p-2 bg-surface-1/95">
+        <div className="flex items-end gap-2 bg-surface-2 rounded-lg p-2 border border-border/70">
           <textarea
             ref={textareaRef}
             value={input}
@@ -544,14 +549,14 @@ export default function LLMPanel({
                   : 'Message (Enter to send, Shift+Enter for newline)'
             }
             rows={1}
-            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/20 resize-none outline-none leading-relaxed max-h-32 overflow-y-auto"
+            className="flex-1 bg-transparent text-xs text-primary placeholder:text-subtle resize-none outline-none leading-relaxed max-h-32 overflow-y-auto"
             style={{ minHeight: '20px' }}
           />
           {isBusy ? (
             <button
               onClick={onCancel}
               title="Stop generation"
-              className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all"
+              className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] bg-danger/10 text-danger hover:bg-danger/20 transition-all"
             >
               ■
             </button>
@@ -559,7 +564,7 @@ export default function LLMPanel({
             <button
               onClick={submit}
               disabled={!input.trim()}
-              className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] bg-white/10 text-white/60 hover:bg-white/20 hover:text-white/90 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+              className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] bg-surface-3 text-primary hover:bg-surface-4 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
             >
               ↑
             </button>
