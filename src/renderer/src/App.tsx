@@ -396,10 +396,10 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-surface-0 text-primary select-none">
+    <div className="flex flex-col h-screen bg-surface-0 text-primary">
       {/* Titlebar drag region */}
       <div
-        className="flex items-center h-10 px-4 flex-shrink-0 border-b border-border/70 bg-surface-0/95 backdrop-blur"
+        className="flex items-center h-10 px-4 flex-shrink-0 border-b border-border/70 bg-surface-0/95 backdrop-blur select-none"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="ml-16 flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -510,7 +510,7 @@ export default function App() {
       <div ref={layoutRef} className="flex flex-1 overflow-hidden min-w-0">
         {/* Sidebar — File tree */}
         <aside
-          className="flex flex-col flex-shrink-0 border-r border-border/70 bg-surface-1 overflow-hidden min-w-0"
+          className="flex flex-col flex-shrink-0 border-r border-border/70 bg-surface-1 overflow-hidden min-w-0 select-none"
           style={{ width: leftCollapsed ? '0px' : `${leftWidth}px` }}
         >
           <button

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, clipboard } from 'electron'
 import { join, dirname, resolve, relative, isAbsolute } from 'path'
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs'
 import { spawn } from 'child_process'
@@ -137,6 +137,29 @@ function createWindow(): BrowserWindow {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Right-click context menu: Copy when text is selected, Paste in inputs
+  win.webContents.on('context-menu', (_e, params) => {
+    const items: Electron.MenuItemConstructorOptions[] = []
+    if (params.selectionText) {
+      items.push({
+        label: 'Copy',
+        accelerator: 'CmdOrCtrl+C',
+        click: () => clipboard.writeText(params.selectionText),
+      })
+    }
+    if (params.isEditable) {
+      if (params.selectionText) {
+        items.push({
+          label: 'Cut',
+          accelerator: 'CmdOrCtrl+X',
+          role: 'cut',
+        })
+      }
+      items.push({ label: 'Paste', accelerator: 'CmdOrCtrl+V', role: 'paste' })
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup()
   })
 
   return win
