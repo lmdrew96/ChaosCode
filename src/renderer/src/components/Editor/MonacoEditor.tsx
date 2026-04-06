@@ -4,6 +4,17 @@ import * as Monaco from 'monaco-editor'
 import type { OpenFile } from '@/types'
 import type { ResolvedTheme } from '@/hooks/useTheme'
 
+// Suppress Monaco tsWorker race: getSyntacticDiagnostics fires on the transient
+// inmemory://model/1 URI before noSyntacticValidation propagates. There is no
+// public API to prevent this — suppressing the unhandled rejection is the only fix.
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+    if (e.reason?.message?.includes('inmemory://model/1')) {
+      e.preventDefault()
+    }
+  })
+}
+
 // Inject diff decoration styles once at module load
 const DIFF_STYLE_ID = 'chaoscode-diff-decorations'
 if (typeof document !== 'undefined' && !document.getElementById(DIFF_STYLE_ID)) {
@@ -95,12 +106,6 @@ function handleBeforeMount(monaco: typeof Monaco) {
   }
   monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation)
   monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation)
-
-  // Pre-register the in-memory model URI so the tsWorker doesn't throw
-  // "Could not find source file: 'inmemory://model/1'" during the brief window
-  // between model creation and when our noSyntacticValidation setting propagates.
-  monaco.languages.typescript.typescriptDefaults.addExtraLib('', 'inmemory://model/1')
-  monaco.languages.typescript.javascriptDefaults.addExtraLib('', 'inmemory://model/1')
 
   // Enable JSX so TSX/JSX files parse without every '<' being a syntax error.
   const compilerOptions = {
