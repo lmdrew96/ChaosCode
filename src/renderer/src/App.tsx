@@ -103,10 +103,10 @@ export default function App() {
 
   async function applySession(session: StoredSession) {
     isLoadingSession.current = true
-    setMessages(session.messages)
-    setReviews(session.reviews)
-    setTarget(session.target)
-    setAgenticMode(session.agenticMode)
+    setMessages(session.messages ?? [])
+    setReviews(session.reviews ?? [])
+    setTarget(session.target ?? 'both')
+    setAgenticMode(session.agenticMode ?? false)
     setRootPath(session.rootPath)
     setRootName(session.rootPath?.split('/').pop())
 

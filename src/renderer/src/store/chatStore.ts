@@ -4,7 +4,10 @@ import { contentToString } from '@/types'
 
 // ≈4 chars per token (rough but consistent approximation for cost visibility)
 function estimateTokens(messages: Message[]): number {
-  const chars = messages.reduce((sum, m) => sum + contentToString(m.content).length, 0)
+  if (!messages?.length) return 0
+  const chars = messages.reduce((sum, m) => {
+    try { return sum + contentToString(m.content).length } catch { return sum }
+  }, 0)
   return Math.ceil(chars / 4)
 }
 
@@ -38,7 +41,7 @@ const useChatStore = create<ChatStore>((set) => ({
 
   setMessages: (value) =>
     set((state) => {
-      const messages = typeof value === 'function' ? value(state.messages) : value
+      const messages = typeof value === 'function' ? value(state.messages) : (value ?? [])
       return { messages, estimatedTokens: estimateTokens(messages) }
     }),
 
