@@ -2,7 +2,7 @@ import Editor, { useMonaco } from '@monaco-editor/react'
 import { useEffect, useRef } from 'react'
 import * as Monaco from 'monaco-editor'
 import type { OpenFile } from '@/types'
-import type { ResolvedTheme } from '@/hooks/useTheme'
+import type { ColorScheme, ResolvedTheme } from '@/hooks/useTheme'
 
 // Suppress Monaco tsWorker race: getSyntacticDiagnostics fires on the transient
 // inmemory://model/1 URI before noSyntacticValidation propagates. There is no
@@ -31,12 +31,15 @@ interface Props {
   file: OpenFile | null
   onChange: (content: string) => void
   theme: ResolvedTheme
+  colorScheme: ColorScheme
   /** 1-based line numbers changed by the last agentic write, for gutter highlighting */
   addedLines?: number[]
 }
 
-const MONACO_THEMES: Record<ResolvedTheme, Monaco.editor.IStandaloneThemeData> = {
-  dark: {
+type ThemeKey = `${ColorScheme}-${ResolvedTheme}`
+
+const MONACO_THEMES: Record<ThemeKey, Monaco.editor.IStandaloneThemeData> = {
+  'slate-dark': {
     base: 'vs-dark',
     inherit: true,
     rules: [
@@ -62,7 +65,7 @@ const MONACO_THEMES: Record<ResolvedTheme, Monaco.editor.IStandaloneThemeData> =
       'scrollbar.shadow': '#00000000',
     },
   },
-  light: {
+  'slate-light': {
     base: 'vs',
     inherit: true,
     rules: [
@@ -85,6 +88,110 @@ const MONACO_THEMES: Record<ResolvedTheme, Monaco.editor.IStandaloneThemeData> =
       'editorIndentGuide.activeBackground': '#cbd5e1',
       'scrollbarSlider.background': '#94a3b880',
       'scrollbarSlider.hoverBackground': '#64748b80',
+      'scrollbar.shadow': '#00000000',
+    },
+  },
+  'nord-dark': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '4C566A', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '81A1C1' },
+      { token: 'string', foreground: 'A3BE8C' },
+      { token: 'number', foreground: 'B48EAD' },
+      { token: 'type', foreground: '8FBCBB' },
+    ],
+    colors: {
+      'editor.background': '#2E3440',
+      'editor.foreground': '#D8DEE9',
+      'editorLineNumber.foreground': '#4C566A',
+      'editorLineNumber.activeForeground': '#D8DEE9',
+      'editor.lineHighlightBackground': '#3B4252',
+      'editor.selectionBackground': '#434C5E',
+      'editorCursor.foreground': '#88C0D0',
+      'editor.inactiveSelectionBackground': '#3B4252',
+      'editorIndentGuide.background': '#3B4252',
+      'editorIndentGuide.activeBackground': '#434C5E',
+      'scrollbarSlider.background': '#4C566A80',
+      'scrollbarSlider.hoverBackground': '#81A1C180',
+      'scrollbar.shadow': '#00000000',
+    },
+  },
+  'nord-light': {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '9aacbd', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '5E81AC' },
+      { token: 'string', foreground: '4C7A5C' },
+      { token: 'number', foreground: '8A5E8A' },
+      { token: 'type', foreground: '407E8A' },
+    ],
+    colors: {
+      'editor.background': '#ECEFF4',
+      'editor.foreground': '#2E3440',
+      'editorLineNumber.foreground': '#788898',
+      'editorLineNumber.activeForeground': '#3B4252',
+      'editor.lineHighlightBackground': '#D8DEE9',
+      'editor.selectionBackground': '#81A1C140',
+      'editorCursor.foreground': '#5E81AC',
+      'editor.inactiveSelectionBackground': '#C8D4E0',
+      'editorIndentGuide.background': '#C8D4E0',
+      'editorIndentGuide.activeBackground': '#B0BECE',
+      'scrollbarSlider.background': '#9aacbd80',
+      'scrollbarSlider.hoverBackground': '#5E81AC80',
+      'scrollbar.shadow': '#00000000',
+    },
+  },
+  'adhd-dark': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '6a5a88', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'DBD5E2' },
+      { token: 'string', foreground: 'DEA649' },
+      { token: 'number', foreground: '97D181' },
+      { token: 'type', foreground: '8CBDB9' },
+    ],
+    colors: {
+      'editor.background': '#1E1830',
+      'editor.foreground': '#f0ecf8',
+      'editorLineNumber.foreground': '#4a4268',
+      'editorLineNumber.activeForeground': '#b0a8d8',
+      'editor.lineHighlightBackground': '#261e3c',
+      'editor.selectionBackground': '#4a3a70',
+      'editorCursor.foreground': '#88739E',
+      'editor.inactiveSelectionBackground': '#302448',
+      'editorIndentGuide.background': '#302848',
+      'editorIndentGuide.activeBackground': '#4a3a70',
+      'scrollbarSlider.background': '#4a426880',
+      'scrollbarSlider.hoverBackground': '#88739E80',
+      'scrollbar.shadow': '#00000000',
+    },
+  },
+  'adhd-light': {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: 'a898c8', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '1E1830' },
+      { token: 'string', foreground: 'b87820' },
+      { token: 'number', foreground: '4a8a3a' },
+      { token: 'type', foreground: '3a7a76' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1E1830',
+      'editorLineNumber.foreground': '#c8b8e8',
+      'editorLineNumber.activeForeground': '#88739E',
+      'editor.lineHighlightBackground': '#ede8f8',
+      'editor.selectionBackground': '#c8b8e880',
+      'editorCursor.foreground': '#88739E',
+      'editor.inactiveSelectionBackground': '#ddd5ee',
+      'editorIndentGuide.background': '#ddd5ee',
+      'editorIndentGuide.activeBackground': '#c8b8e8',
+      'scrollbarSlider.background': '#c8b8e880',
+      'scrollbarSlider.hoverBackground': '#88739E80',
       'scrollbar.shadow': '#00000000',
     },
   },
@@ -119,17 +226,17 @@ function handleBeforeMount(monaco: typeof Monaco) {
   monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
 }
 
-export default function MonacoEditorPanel({ file, onChange, theme, addedLines }: Props) {
+export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, addedLines }: Props) {
   const monaco = useMonaco()
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const decorationIds = useRef<string[]>([])
 
   useEffect(() => {
     if (!monaco) return
-    monaco.editor.defineTheme('chaos-dark', MONACO_THEMES.dark)
-    monaco.editor.defineTheme('chaos-light', MONACO_THEMES.light)
-    monaco.editor.setTheme(theme === 'dark' ? 'chaos-dark' : 'chaos-light')
-  }, [monaco, theme])
+    const key: ThemeKey = `${colorScheme}-${theme}`
+    monaco.editor.defineTheme('chaos-theme', MONACO_THEMES[key])
+    monaco.editor.setTheme('chaos-theme')
+  }, [monaco, theme, colorScheme])
 
   // Apply / clear diff decorations when addedLines or file changes
   useEffect(() => {

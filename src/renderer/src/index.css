@@ -45,6 +45,92 @@ html.dark {
   --danger: 248 113 113;
 }
 
+/* ── Nord ─────────────────────────────────────────────────────────── */
+html[data-color-scheme='nord'] {
+  color-scheme: light;
+  --canvas: 216 222 233;
+  --surface-0: 236 239 244;
+  --surface-1: 229 236 240;
+  --surface-2: 200 210 224;
+  --surface-3: 178 192 210;
+  --surface-4: 152 168 192;
+  --border: 178 192 210;
+  --border-subtle: 200 210 224;
+  --border-strong: 120 140 168;
+  --text-primary: 46 52 64;
+  --text-secondary: 59 66 82;
+  --text-muted: 76 86 106;
+  --text-subtle: 97 110 132;
+  --accent-gemini: 94 129 172;
+  --accent-claude: 208 135 112;
+  --success: 76 122 92;
+  --danger: 191 97 106;
+}
+
+html[data-color-scheme='nord'][data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: 46 52 64;
+  --surface-0: 46 52 64;
+  --surface-1: 59 66 82;
+  --surface-2: 67 76 94;
+  --surface-3: 76 86 106;
+  --surface-4: 94 103 120;
+  --border: 76 86 106;
+  --border-subtle: 59 66 82;
+  --border-strong: 97 110 132;
+  --text-primary: 236 239 244;
+  --text-secondary: 229 236 240;
+  --text-muted: 216 222 233;
+  --text-subtle: 192 200 216;
+  --accent-gemini: 136 192 208;
+  --accent-claude: 235 203 139;
+  --success: 163 190 140;
+  --danger: 191 97 106;
+}
+
+/* ── ADHD Brand ───────────────────────────────────────────────────── */
+html[data-color-scheme='adhd'] {
+  color-scheme: light;
+  --canvas: 245 241 252;
+  --surface-0: 255 255 255;
+  --surface-1: 237 231 248;
+  --surface-2: 221 212 240;
+  --surface-3: 200 188 228;
+  --surface-4: 172 156 210;
+  --border: 200 188 228;
+  --border-subtle: 221 212 240;
+  --border-strong: 148 128 185;
+  --text-primary: 30 24 48;
+  --text-secondary: 54 44 80;
+  --text-muted: 80 68 112;
+  --text-subtle: 110 96 148;
+  --accent-gemini: 136 115 158;
+  --accent-claude: 222 166 73;
+  --success: 74 138 58;
+  --danger: 192 64 64;
+}
+
+html[data-color-scheme='adhd'][data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: 30 24 48;
+  --surface-0: 30 24 48;
+  --surface-1: 38 30 60;
+  --surface-2: 48 40 74;
+  --surface-3: 60 52 90;
+  --surface-4: 76 66 110;
+  --border: 76 66 110;
+  --border-subtle: 48 40 74;
+  --border-strong: 110 96 148;
+  --text-primary: 240 236 252;
+  --text-secondary: 207 200 232;
+  --text-muted: 176 168 216;
+  --text-subtle: 146 136 184;
+  --accent-gemini: 136 115 158;
+  --accent-claude: 222 166 73;
+  --success: 151 209 129;
+  --danger: 224 112 112;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

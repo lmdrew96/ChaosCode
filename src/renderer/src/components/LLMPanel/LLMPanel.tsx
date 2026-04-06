@@ -5,7 +5,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart, ToolUsePart, ToolResultPart } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
-import type { ResolvedTheme } from '@/hooks/useTheme'
+import type { ColorScheme, ResolvedTheme } from '@/hooks/useTheme'
 import TerminalPanel from '@/components/Terminal/TerminalPanel'
 import StepContainer from './StepContainer'
 import ThinkingIndicator from './ThinkingIndicator'
@@ -92,6 +92,7 @@ interface Props {
   breakingIssue: BreakingIssue | null
   onDismissBreaking: () => void
   theme: ResolvedTheme
+  colorScheme: ColorScheme
   haikuModel: string
   sonnetModel: string
   onHaikuModelChange: (id: string) => void
@@ -333,6 +334,7 @@ export default function LLMPanel({
   breakingIssue,
   onDismissBreaking,
   theme,
+  colorScheme,
   haikuModel,
   sonnetModel,
   onHaikuModelChange,
@@ -691,7 +693,7 @@ export default function LLMPanel({
             <span className="text-[9px] text-subtle opacity-40">⠿</span>
           </div>
           <div className="flex-1 min-h-0 p-1">
-            <TerminalPanel cwd={rootPath ?? undefined} theme={theme} />
+            <TerminalPanel cwd={rootPath ?? undefined} theme={theme} colorScheme={colorScheme} />
           </div>
         </div>
       )}

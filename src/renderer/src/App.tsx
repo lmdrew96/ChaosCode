@@ -4,7 +4,7 @@ import FileTree from '@/components/FileTree/FileTree'
 import LLMPanel from '@/components/LLMPanel/LLMPanel'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { useAgenticMode } from '@/hooks/useAgenticMode'
-import { useTheme, type ThemePreference } from '@/hooks/useTheme'
+import { useTheme, type ColorScheme, type ThemePreference } from '@/hooks/useTheme'
 import { PANEL_HANDLE_WIDTH, useResizablePanels } from '@/hooks/useResizablePanels'
 import { useSessionStorage, type StoredSession } from '@/hooks/useSessionStorage'
 import {
@@ -49,6 +49,12 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
 ]
 
+const COLOR_SCHEME_OPTIONS: { value: ColorScheme; label: string }[] = [
+  { value: 'slate', label: 'Slate' },
+  { value: 'nord', label: 'Nord' },
+  { value: 'adhd', label: 'ADHD' },
+]
+
 function pruneMessages(msgs: Message[]): Message[] {
   if (msgs.length <= 1) return msgs
 
@@ -72,7 +78,7 @@ function pruneMessages(msgs: Message[]): Message[] {
 
 export default function App() {
   const layoutRef = useRef<HTMLDivElement>(null)
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme, resolvedTheme, colorScheme, setColorScheme } = useTheme()
   const [rootPath, setRootPath] = useState<string | null>(null)
   const [rootName, setRootName] = useState<string | undefined>()
   const [fileTree, setFileTree] = useState<FileNode[]>([])
@@ -481,6 +487,28 @@ export default function App() {
               ~{estimatedTokens >= 1000 ? `${(estimatedTokens / 1000).toFixed(1)}k` : estimatedTokens} tok
             </span>
           )}
+          <span className="text-[9px] uppercase tracking-[0.3em] text-subtle">Style</span>
+          <div className="flex items-center rounded-full border border-border bg-surface-1 p-0.5 shadow-sm">
+            {COLOR_SCHEME_OPTIONS.map(({ value, label }) => {
+              const isActive = colorScheme === value
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setColorScheme(value)}
+                  title={`${label} color scheme`}
+                  className={`rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.2em] transition-colors ${
+                    isActive
+                      ? 'bg-surface-3 text-primary shadow'
+                      : 'text-secondary hover:bg-surface-2 hover:text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
           <span className="text-[9px] uppercase tracking-[0.3em] text-subtle">Theme</span>
           <div className="flex items-center rounded-full border border-border bg-surface-1 p-0.5 shadow-sm">
             {THEME_OPTIONS.map(({ value, label }) => {
@@ -559,6 +587,7 @@ export default function App() {
               file={openFile}
               onChange={handleEditorChange}
               theme={resolvedTheme}
+              colorScheme={colorScheme}
               addedLines={openFile ? agenticState.fileDiffs[openFile.path]?.addedLines : undefined}
             />
           </ErrorBoundary>
@@ -608,6 +637,7 @@ export default function App() {
               breakingIssue={breakingIssue}
               onDismissBreaking={dismissInterrupt}
               theme={resolvedTheme}
+              colorScheme={colorScheme}
               haikuModel={haikuModel}
               sonnetModel={sonnetModel}
               onHaikuModelChange={setHaikuModel}
