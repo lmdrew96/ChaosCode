@@ -9,11 +9,11 @@ import * as pty from 'node-pty'
 import {
   buildAgenticReviewUserMessage,
   buildPlanReviewUserMessage,
-  haikuAgenticSystemPrompt,
-  haikuPlanningSystemPrompt,
+  buildHaikuAgenticSystemPrompt,
+  buildHaikuPlanningSystemPrompt,
   haikuSystemPrompt,
   sonnetAgenticReviewSystemPrompt,
-  sonnetPlanReviewSystemPrompt,
+  buildSonnetPlanReviewSystemPrompt,
   sonnetSystemPrompt,
 } from './prompts'
 import { providerRegistry } from './providers/registry'
@@ -170,7 +170,7 @@ function createWindow(): BrowserWindow {
 
    if (process.env.NODE_ENV === 'development') {
      win.loadURL('http://localhost:5173')
-     win.webContents.openDevTools({ mode: 'detach' })
+     // win.webContents.openDevTools({ mode: 'detach' })
    } else {
      win.loadFile(join(__dirname, '../renderer/index.html'))
    }
@@ -295,12 +295,12 @@ ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string)
 const STREAM_TIMEOUT_MS = 120_000
 const PLAN_STREAM_TIMEOUT_MS = 60_000
 
-ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string) => {
+ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string, toolsDocs?: string) => {
   const anthropic = createAnthropicClient()
   const stream = anthropic.messages.stream({
     model: resolveModel(model, HAIKU_MODEL),
     max_tokens: 2048,
-    system: haikuPlanningSystemPrompt,
+    system: buildHaikuPlanningSystemPrompt(toolsDocs ?? ''),
     messages: [{ role: 'user', content: userTask }]
   })
 
@@ -325,13 +325,13 @@ ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: stri
 
 ipcMain.handle('llm:sonnet:plan-review', async (
   _event,
-  { userTask, planText, model }: { userTask: string; planText: string; model?: string }
+  { userTask, planText, model, toolsDocs }: { userTask: string; planText: string; model?: string; toolsDocs?: string }
 ) => {
   const anthropic = createAnthropicClient()
   const response = await anthropic.messages.create({
     model: resolveModel(model, SONNET_MODEL),
     max_tokens: 2048,
-    system: sonnetPlanReviewSystemPrompt,
+    system: buildSonnetPlanReviewSystemPrompt(toolsDocs ?? ''),
     messages: [{
       role: 'user',
       content: buildPlanReviewUserMessage({ userTask, planText }),
@@ -340,12 +340,12 @@ ipcMain.handle('llm:sonnet:plan-review', async (
   return response.content[0].type === 'text' ? response.content[0].text : ''
 })
 
-ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: string, model?: string) => {
+ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: string, model?: string, toolsDocs?: string) => {
   const anthropic = createAnthropicClient()
   const stream = anthropic.messages.stream({
     model: resolveModel(model, HAIKU_MODEL),
     max_tokens: 4096,
-    system: haikuAgenticSystemPrompt,
+    system: buildHaikuAgenticSystemPrompt(toolsDocs ?? ''),
     messages: [{ role: 'user', content: userTask }]
   })
 

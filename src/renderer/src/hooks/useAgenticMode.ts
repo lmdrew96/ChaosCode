@@ -81,6 +81,8 @@ export function useAgenticMode({
   const interruptRef = useRef(false)
   // Active Haiku agentic request ID for immediate interrupt cancellation
   const activeAgenticRequestId = useRef<string | null>(null)
+  // ID of the current Haiku implementation message — used by run_terminal_command to append output
+  const activeHaikuMsgId = useRef<string>('')
   // Track pending Sonnet review promises so we can await them all at the end
   const reviewPromises = useRef<Promise<void>[]>([])
   const originalContents = useRef<Record<string, string>>({})
@@ -395,6 +397,70 @@ export function useAgenticMode({
         '</agentic_task_input>',
       ].filter(Boolean).join('\n\n')
 
+      // ── Build tool registry (shared by all stages) ───────────────────────────
+      // Registered here so listPublicDocs() can be passed to planning + plan-review
+      // prompts, ensuring the model always knows exactly which tools are available.
+
+      const registry = new ToolRegistry()
+
+      registry.register({
+        name: 'persist_and_review',
+        description: 'persist_and_review: write a file to disk and trigger Sonnet review',
+        internal: true,
+        execute: async (input) => {
+          const filePath = typeof input.path === 'string' ? input.path : ''
+          const content = typeof input.content === 'string' ? input.content : ''
+          if (!filePath || !content) {
+            return {
+              success: false,
+              content: 'persist_and_review requires string fields: path and content',
+            }
+          }
+
+          await queueFileOperation(filePath, async () => {
+            await persistFile(filePath, content)
+            await onFileWritten(filePath)
+            await reviewFile(filePath, content, userTask)
+          })
+
+          return {
+            success: true,
+            content: `Wrote and reviewed ${filePath}`,
+          }
+        },
+      })
+
+      registry.register({
+        name: 'run_terminal_command',
+        description: `run_terminal_command: Execute any shell command in the project root and return stdout/stderr.
+  Input: { "command": "shell command string", "cwd": "optional/relative/path" }
+  Use for: git operations (add, commit, push, pull, diff, status, log), npm/pnpm install, builds, tests, linters.
+  Rules: prefer non-destructive commands; never rm -rf; cwd is relative to project root.`,
+        execute: async (input) => {
+          const command = typeof input.command === 'string' ? input.command : ''
+          const cwd = typeof input.cwd === 'string' ? input.cwd : undefined
+
+          if (!command) return { success: false, content: 'run_terminal_command: missing command' }
+          if (!rootPath) return { success: false, content: 'run_terminal_command: no project folder is open' }
+
+          const result = await window.api.runCommand(command, cwd, rootPath)
+
+          const termPart: TerminalOutputPart = {
+            type: 'terminal_output',
+            terminalOutput: { command, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode },
+          }
+          appendMessagePart(activeHaikuMsgId.current, termPart)
+
+          const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+          return {
+            success: result.exitCode === 0,
+            content: output || `Exit code: ${result.exitCode}`,
+          }
+        },
+      })
+
+      const toolsDocs = registry.listPublicDocs()
+
       // ── Stage 1: Haiku planning ──────────────────────────────────────────────
 
       const planRequestId = uid()
@@ -420,7 +486,7 @@ export function useAgenticMode({
       const unsubscribePlanDone = window.api.onHaikuPlanDone(planRequestId, () => {})
 
       try {
-        await window.api.sendToHaikuPlan(contextBlock, planRequestId, haikuModel)
+        await window.api.sendToHaikuPlan(contextBlock, planRequestId, haikuModel, toolsDocs)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setMessages((prev) =>
@@ -446,6 +512,7 @@ export function useAgenticMode({
           userTask,
           planText,
           model: sonnetModel,
+          toolsDocs,
         })
         if (sonnetReviewedPlan.trim()) reviewedPlanText = sonnetReviewedPlan
       } catch (err) {
@@ -497,6 +564,7 @@ export function useAgenticMode({
 
       // Create Haiku streaming message placeholder
       const haikuMsgId = uid()
+      activeHaikuMsgId.current = haikuMsgId
       setMessages((prev) => [
         ...prev,
         {
@@ -507,59 +575,6 @@ export function useAgenticMode({
           timestamp: Date.now(),
         },
       ])
-
-      const registry = new ToolRegistry()
-      registry.register({
-        name: 'persist_and_review',
-        description: 'Persist a file and run Sonnet review on it',
-        execute: async (input) => {
-          const filePath = typeof input.path === 'string' ? input.path : ''
-          const content = typeof input.content === 'string' ? input.content : ''
-          if (!filePath || !content) {
-            return {
-              success: false,
-              content: 'persist_and_review requires string fields: path and content',
-            }
-          }
-
-          await queueFileOperation(filePath, async () => {
-            await persistFile(filePath, content)
-            await onFileWritten(filePath)
-            await reviewFile(filePath, content, userTask)
-          })
-
-          return {
-            success: true,
-            content: `Wrote and reviewed ${filePath}`,
-          }
-        },
-      })
-
-      registry.register({
-        name: 'run_terminal_command',
-        description: 'Execute a shell command within the project root and return stdout/stderr. The optional cwd field is a path relative to the project root.',
-        execute: async (input) => {
-          const command = typeof input.command === 'string' ? input.command : ''
-          const cwd = typeof input.cwd === 'string' ? input.cwd : undefined
-
-          if (!command) return { success: false, content: 'run_terminal_command: missing command' }
-          if (!rootPath) return { success: false, content: 'run_terminal_command: no project folder is open' }
-
-          const result = await window.api.runCommand(command, cwd, rootPath)
-
-          const termPart: TerminalOutputPart = {
-            type: 'terminal_output',
-            terminalOutput: { command, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode },
-          }
-          appendMessagePart(haikuMsgId, termPart)
-
-          const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
-          return {
-            success: result.exitCode === 0,
-            content: output || `Exit code: ${result.exitCode}`,
-          }
-        },
-      })
 
       // Accumulate stream
       let buffer = ''
@@ -646,7 +661,7 @@ export function useAgenticMode({
 
       // Kick off Haiku agentic call (uses structured output system prompt + file context)
       try {
-        await window.api.sendToHaikuAgentic(fullTask, requestId, haikuModel)
+        await window.api.sendToHaikuAgentic(fullTask, requestId, haikuModel, toolsDocs)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setMessages((prev) =>
