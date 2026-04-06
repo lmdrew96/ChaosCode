@@ -210,11 +210,13 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
                 </h3>
               )
             },
-            p({ children, ...props }: any) {
+            // Use div instead of p — react-markdown may nest block elements
+            // (code fence → div → pre) inside paragraph nodes, which is invalid HTML.
+            p({ children }: any) {
               return (
-                <p className="my-1 text-primary" {...props}>
+                <div className="my-1 text-primary">
                   {children}
-                </p>
+                </div>
               )
             },
           }}

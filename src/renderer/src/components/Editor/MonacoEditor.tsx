@@ -86,6 +86,8 @@ function handleBeforeMount(monaco: typeof Monaco) {
 
   // Disable all diagnostics — Monaco has no access to node_modules or tsconfig,
   // so type errors and import resolution failures are always false positives.
+  // noSyntacticValidation also silences the tsWorker "inmemory://model/1" race
+  // where the worker requests diagnostics before the model URI is registered.
   const noValidation = {
     noSemanticValidation: true,
     noSyntacticValidation: true,
@@ -93,6 +95,12 @@ function handleBeforeMount(monaco: typeof Monaco) {
   }
   monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation)
   monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation)
+
+  // Pre-register the in-memory model URI so the tsWorker doesn't throw
+  // "Could not find source file: 'inmemory://model/1'" during the brief window
+  // between model creation and when our noSyntacticValidation setting propagates.
+  monaco.languages.typescript.typescriptDefaults.addExtraLib('', 'inmemory://model/1')
+  monaco.languages.typescript.javascriptDefaults.addExtraLib('', 'inmemory://model/1')
 
   // Enable JSX so TSX/JSX files parse without every '<' being a syntax error.
   const compilerOptions = {
