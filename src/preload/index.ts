@@ -38,7 +38,7 @@ export type Api = {
   sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string, attachments?: Attachment[]) => Promise<string>
 
   // Agentic LLMs
-  sendToHaikuPlan: (userTask: string, requestId: string, model?: string, toolsDocs?: string) => Promise<string>
+  sendToHaikuPlan: (userTask: string, requestId: string, model?: string, toolsDocs?: string, imageAttachments?: Attachment[]) => Promise<string>
   sonnetPlanReview: (args: { userTask: string; planText: string; model?: string; toolsDocs?: string }) => Promise<string>
   sendToHaikuAgentic: (userTask: string, requestId: string, model?: string, toolsDocs?: string) => Promise<string>
   sonnetAgenticReview: (args: {
@@ -89,7 +89,7 @@ const api: Api = {
   sendToHaiku: (messages, requestId, rootPath, model, attachments) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath, model, attachments),
   sendToSonnet: (messages, requestId, rootPath, model, attachments) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath, model, attachments),
 
-  sendToHaikuPlan: (userTask, requestId, model, toolsDocs) => ipcRenderer.invoke('llm:haiku:plan', userTask, requestId, model, toolsDocs),
+  sendToHaikuPlan: (userTask, requestId, model, toolsDocs, imageAttachments) => ipcRenderer.invoke('llm:haiku:plan', userTask, requestId, model, toolsDocs, imageAttachments),
   sonnetPlanReview: (args) => ipcRenderer.invoke('llm:sonnet:plan-review', args),
   sendToHaikuAgentic: (userTask, requestId, model, toolsDocs) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId, model, toolsDocs),
   sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),

@@ -391,12 +391,6 @@ export default function LLMPanel({
     }
   }, [messages, isNearBottom, scrollToBottom])
 
-  useEffect(() => {
-    if (!agenticMode) return
-    setAttachments([])
-    setAttachmentError(null)
-  }, [agenticMode])
-
   function handleTerminalDragStart(e: React.PointerEvent) {
     e.preventDefault()
     terminalDragRef.current = { startY: e.clientY, startH: terminalHeight }
@@ -441,7 +435,7 @@ export default function LLMPanel({
   }
 
   async function handlePickAttachments() {
-    if (isBusy || agenticMode) return
+    if (isBusy) return
     try {
       const picked = await window.api.pickFile()
       if (!picked || picked.length === 0) return
@@ -842,17 +836,15 @@ export default function LLMPanel({
           </div>
         )}
         <div className="flex items-end gap-2 bg-surface-2 rounded-lg p-2 border border-border/70">
-          {!agenticMode && (
-            <button
-              type="button"
-              onClick={() => void handlePickAttachments()}
-              title="Attach files"
-              disabled={isBusy}
-              className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-[12px] bg-surface-3 text-secondary hover:text-primary hover:bg-surface-4 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            >
-              +
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void handlePickAttachments()}
+            title="Attach files"
+            disabled={isBusy}
+            className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-[12px] bg-surface-3 text-secondary hover:text-primary hover:bg-surface-4 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          >
+            +
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
@@ -862,7 +854,7 @@ export default function LLMPanel({
               isBusy
                 ? isAgenticBusy ? 'Agentic task running... You can keep typing.' : 'Streaming response... You can keep typing.'
                 : agenticMode
-                  ? 'Describe a task for Haiku Implementer to implement…'
+                  ? 'Describe a task for Haiku Implementer to implement… (+ to attach files)'
                   : 'Message (Enter to send, Shift+Enter for newline, + to attach files)'
             }
             rows={4}

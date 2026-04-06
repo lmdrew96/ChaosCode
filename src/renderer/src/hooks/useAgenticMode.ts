@@ -4,7 +4,7 @@ import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
 import { countLineDiff } from '@/services/lineDiff'
 import { ToolRegistry } from '@/services/toolRegistry'
-import type { AgenticPlan, FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
+import type { AgenticPlan, Attachment, FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
 import useChatStore from '@/store/chatStore'
 
 
@@ -322,7 +322,7 @@ export function useAgenticMode({
    * Stages: planning → plan-review → (awaiting-approval) → implementing → reviewing
    */
   const runAgenticTask = useCallback(
-    async (userTask: string, chatCarryover = '') => {
+    async (userTask: string, chatCarryover = '', attachments: Attachment[] = []) => {
       if (isRunningRef.current) return
       isRunningRef.current = true
 
@@ -383,10 +383,21 @@ export function useAgenticMode({
           ].join('\n')
         : '<active_file />'
 
+      const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+      const imageAttachments = attachments.filter((a) => IMAGE_TYPES.has(a.mediaType))
+      const textAttachments = attachments.filter((a) => !IMAGE_TYPES.has(a.mediaType))
+
+      const attachedFilesBlock = textAttachments.length > 0
+        ? '<attached_files>\n' +
+          textAttachments.map((a) => `<attached_file name="${a.name}">\n${a.data}\n</attached_file>`).join('\n') +
+          '\n</attached_files>'
+        : ''
+
       const escapedTask = userTask.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const contextBlock = [
         '<agentic_task_input>',
         chatCarryover ? `<chat_carryover>\n${chatCarryover}\n</chat_carryover>` : '',
+        attachedFilesBlock,
         '<project_tree>',
         treeText,
         '</project_tree>',
@@ -486,7 +497,7 @@ export function useAgenticMode({
       const unsubscribePlanDone = window.api.onHaikuPlanDone(planRequestId, () => {})
 
       try {
-        await window.api.sendToHaikuPlan(contextBlock, planRequestId, haikuModel, toolsDocs)
+        await window.api.sendToHaikuPlan(contextBlock, planRequestId, haikuModel, toolsDocs, imageAttachments)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setMessages((prev) =>

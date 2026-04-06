@@ -295,13 +295,30 @@ ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string)
 const STREAM_TIMEOUT_MS = 120_000
 const PLAN_STREAM_TIMEOUT_MS = 60_000
 
-ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string, toolsDocs?: string) => {
+ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string, toolsDocs?: string, imageAttachments?: Attachment[]) => {
   const anthropic = createAnthropicClient()
+
+  // Build multimodal message content when images are attached
+  const userContent: Anthropic.ContentBlockParam[] = []
+  for (const att of imageAttachments ?? []) {
+    if (IMAGE_MEDIA_TYPES.has(att.mediaType)) {
+      userContent.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: att.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+          data: att.data,
+        },
+      })
+    }
+  }
+  userContent.push({ type: 'text', text: userTask })
+
   const stream = anthropic.messages.stream({
     model: resolveModel(model, HAIKU_MODEL),
     max_tokens: 2048,
     system: buildHaikuPlanningSystemPrompt(toolsDocs ?? ''),
-    messages: [{ role: 'user', content: userTask }]
+    messages: [{ role: 'user', content: userContent.length > 1 ? userContent : userTask }]
   })
 
   const timeout = setTimeout(() => stream.abort(), PLAN_STREAM_TIMEOUT_MS)

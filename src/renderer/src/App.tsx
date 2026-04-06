@@ -343,7 +343,8 @@ export default function App() {
 
       return runAgenticTask(
         normalizedText,
-        buildAgenticCarryover(historyForCarryover, contextItems)
+        buildAgenticCarryover(historyForCarryover, contextItems),
+        attachments
       )
     }
 
