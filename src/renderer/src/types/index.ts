@@ -125,6 +125,15 @@ export interface OpenFile {
   language: string
 }
 
+export interface Attachment {
+  name: string
+  /** MIME type — 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' | 'text/plain' */
+  mediaType: string
+  /** base64 for images; UTF-8 text for text files */
+  data: string
+  size: number
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Coerce MessageContent to a plain string for LLM API calls */

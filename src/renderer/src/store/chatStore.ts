@@ -2,6 +2,22 @@ import { create } from 'zustand'
 import type { Message, ReviewEntry, LLMTarget } from '@/types'
 import { contentToString } from '@/types'
 
+const PREFS_KEY = 'chaoscode.preferences'
+
+interface Prefs {
+  autoApprove?: boolean
+  haikuModel?: string
+  sonnetModel?: string
+}
+
+function readPrefs(): Prefs {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') } catch { return {} }
+}
+
+function writePrefs(patch: Partial<Prefs>): void {
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...patch }))
+}
+
 // ≈4 chars per token (rough but consistent approximation for cost visibility)
 function estimateTokens(messages: Message[]): number {
   if (!messages?.length) return 0
@@ -37,17 +53,19 @@ interface ChatStore {
   setSonnetModel: (id: string) => void
 }
 
-const useChatStore = create<ChatStore>((set) => ({
+const useChatStore = create<ChatStore>((set) => {
+  const prefs = readPrefs()
+  return {
   messages: [],
   reviews: [],
   target: 'both',
   agenticMode: false,
-  autoApprove: false,
+  autoApprove: prefs.autoApprove ?? false,
   haikuStreaming: false,
   sonnetStreaming: false,
   estimatedTokens: 0,
-  haikuModel: 'claude-haiku-4-5',
-  sonnetModel: 'claude-sonnet-4-6',
+  haikuModel: prefs.haikuModel ?? 'claude-haiku-4-5',
+  sonnetModel: prefs.sonnetModel ?? 'claude-sonnet-4-6',
 
   setMessages: (value) =>
     set((state) => {
@@ -62,11 +80,12 @@ const useChatStore = create<ChatStore>((set) => ({
 
   setTarget: (target) => set({ target }),
   setAgenticMode: (agenticMode) => set({ agenticMode }),
-  setAutoApprove: (autoApprove) => set({ autoApprove }),
+  setAutoApprove: (autoApprove) => { writePrefs({ autoApprove }); set({ autoApprove }) },
   setHaikuStreaming: (haikuStreaming) => set({ haikuStreaming }),
   setSonnetStreaming: (sonnetStreaming) => set({ sonnetStreaming }),
-  setHaikuModel: (haikuModel) => set({ haikuModel }),
-  setSonnetModel: (sonnetModel) => set({ sonnetModel }),
-}))
+  setHaikuModel: (haikuModel) => { writePrefs({ haikuModel }); set({ haikuModel }) },
+  setSonnetModel: (sonnetModel) => { writePrefs({ sonnetModel }); set({ sonnetModel }) },
+  }
+})
 
 export default useChatStore

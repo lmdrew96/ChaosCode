@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart, ToolUsePart, ToolResultPart } from '@/types'
+import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart, ToolUsePart, ToolResultPart, Attachment } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
 import type { ColorScheme, ResolvedTheme } from '@/hooks/useTheme'
 import TerminalPanel from '@/components/Terminal/TerminalPanel'
@@ -57,7 +57,6 @@ function ModelPicker({
   onChange: (id: string) => void
   accentClass: string
 }) {
-  const label = MODEL_OPTIONS.find((m) => m.id === value)?.label ?? value
   return (
     <select
       value={value}
@@ -72,7 +71,6 @@ function ModelPicker({
       ))}
     </select>
   )
-  void label // suppress unused warning — label is used implicitly via select value display
 }
 
 interface Props {
@@ -82,7 +80,7 @@ interface Props {
   rootPath: string | null
   target: LLMTarget
   onTargetChange: (t: LLMTarget) => void
-  onSend: (text: string) => void
+  onSend: (text: string, attachments: Attachment[]) => void | Promise<void>
   onCancel: () => void
   haikuStreaming: boolean
   sonnetStreaming: boolean
@@ -347,6 +345,8 @@ export default function LLMPanel({
   onSonnetModelChange,
 }: Props) {
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [showReviews, setShowReviews] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -391,6 +391,12 @@ export default function LLMPanel({
     }
   }, [messages, isNearBottom, scrollToBottom])
 
+  useEffect(() => {
+    if (!agenticMode) return
+    setAttachments([])
+    setAttachmentError(null)
+  }, [agenticMode])
+
   function handleTerminalDragStart(e: React.PointerEvent) {
     e.preventDefault()
     terminalDragRef.current = { startY: e.clientY, startH: terminalHeight }
@@ -420,9 +426,45 @@ export default function LLMPanel({
 
   function submit() {
     const text = input.trim()
-    if (!text || isBusy) return
-    onSend(text)
+    if (agenticMode && !text) return
+    if ((!text && attachments.length === 0) || isBusy) return
+    void onSend(text, attachments)
     setInput('')
+    setAttachments([])
+    setAttachmentError(null)
+  }
+
+  function formatBytes(size: number): string {
+    if (size < 1024) return `${size} B`
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+    return `${(size / 1024 / 1024).toFixed(1)} MB`
+  }
+
+  async function handlePickAttachments() {
+    if (isBusy || agenticMode) return
+    try {
+      const picked = await window.api.pickFile()
+      if (!picked || picked.length === 0) return
+
+      setAttachments((prev) => {
+        const seen = new Set(prev.map((a) => `${a.name}:${a.size}:${a.mediaType}`))
+        const next = [...prev]
+        for (const att of picked) {
+          const key = `${att.name}:${att.size}:${att.mediaType}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          next.push(att)
+        }
+        return next
+      })
+      setAttachmentError(null)
+    } catch (err) {
+      setAttachmentError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
   }
 
   const pendingReviews = reviews.filter((r) => r.severity === 'minor').length
@@ -772,7 +814,45 @@ export default function LLMPanel({
 
       {/* Input */}
       <div className="flex-shrink-0 border-t border-border/70 p-2 bg-surface-1/95">
+        {attachmentError && (
+          <div className="mb-2 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] text-danger">
+            {attachmentError}
+          </div>
+        )}
+        {attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((att, idx) => (
+              <span
+                key={`${att.name}:${att.size}:${idx}`}
+                className="inline-flex items-center gap-1 rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-secondary"
+                title={`${att.name} (${formatBytes(att.size)})`}
+              >
+                <span className="max-w-[180px] truncate">{att.name}</span>
+                <span className="text-subtle">{formatBytes(att.size)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(idx)}
+                  className="text-subtle hover:text-primary"
+                  aria-label={`Remove ${att.name}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-surface-2 rounded-lg p-2 border border-border/70">
+          {!agenticMode && (
+            <button
+              type="button"
+              onClick={() => void handlePickAttachments()}
+              title="Attach files"
+              disabled={isBusy}
+              className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-[12px] bg-surface-3 text-secondary hover:text-primary hover:bg-surface-4 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              +
+            </button>
+          )}
           <textarea
             ref={textareaRef}
             value={input}
@@ -783,7 +863,7 @@ export default function LLMPanel({
                 ? isAgenticBusy ? 'Agentic task running... You can keep typing.' : 'Streaming response... You can keep typing.'
                 : agenticMode
                   ? 'Describe a task for Haiku Implementer to implement…'
-                  : 'Message (Enter to send, Shift+Enter for newline)'
+                  : 'Message (Enter to send, Shift+Enter for newline, + to attach files)'
             }
             rows={4}
             className="flex-1 bg-transparent text-xs text-primary placeholder:text-subtle resize-none outline-none leading-relaxed overflow-y-auto"
@@ -800,7 +880,7 @@ export default function LLMPanel({
           ) : (
             <button
               onClick={submit}
-              disabled={!input.trim()}
+              disabled={!input.trim() && attachments.length === 0}
               className="flex-shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] bg-surface-3 text-primary hover:bg-surface-4 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
             >
               ↑

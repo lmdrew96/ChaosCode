@@ -16,7 +16,7 @@ import {
 } from '@/services/context'
 import { countLineDiff } from '@/services/lineDiff'
 import { contentToString } from '@/types'
-import type { FileNode, Message, OpenFile } from '@/types'
+import type { Attachment, FileNode, Message, OpenFile } from '@/types'
 import useChatStore from '@/store/chatStore'
 
 // Infer Monaco language from file extension
@@ -105,6 +105,8 @@ export default function App() {
 
   // Tracks the on-disk content of each file so Cmd+S can diff against it
   const savedContentRef = useRef<Map<string, string>>(new Map())
+  // Debounce handle for file tree refresh during agentic bulk writes
+  const refreshTreeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [manualDiffLines, setManualDiffLines] = useState<number[]>([])
 
   // Refs to accumulate streamed content without extra re-renders
@@ -242,7 +244,10 @@ export default function App() {
 
   // Called by agentic mode when a file is written to disk
   const handleAgenticFileWritten = useCallback(async (relativePath: string) => {
-    if (rootPath) await refreshFileTree(rootPath)
+    if (rootPath) {
+      if (refreshTreeTimerRef.current) clearTimeout(refreshTreeTimerRef.current)
+      refreshTreeTimerRef.current = setTimeout(() => void refreshFileTree(rootPath), 300)
+    }
 
     if (!rootPath || !openFile) return
 
@@ -327,26 +332,33 @@ export default function App() {
     setSonnetStreaming(false)
   }
 
-  async function handleSend(userText: string) {
+  async function handleSend(userText: string, attachments: Attachment[] = []) {
+    const normalizedText = userText.trim()
+    if (!normalizedText && attachments.length === 0) return
+
     if (agenticMode) {
       const contextItems = buildContextItems()
       const historyForCarryover = pruneMessages(messages)
         .map((m) => ({ role: m.role, content: contentToString(m.content) }))
 
       return runAgenticTask(
-        userText,
+        normalizedText,
         buildAgenticCarryover(historyForCarryover, contextItems)
       )
     }
 
+    const attachmentNote = attachments.length
+      ? `\n\n[Attached: ${attachments.map((a) => a.name).join(', ')}]`
+      : ''
+    const displayText = normalizedText || 'Please review the attached file(s).'
     const userMsg: Message = {
-      id: uid(), role: 'user', content: userText, timestamp: Date.now()
+      id: uid(), role: 'user', content: `${displayText}${attachmentNote}`, timestamp: Date.now()
     }
     setMessages((prev) => [...prev, userMsg])
 
     // Build context via the context service (Continue's ContextItem pattern)
     const contextItems = buildContextItems()
-    const contextText = buildLLMMessage(userText, contextItems)
+    const contextText = buildLLMMessage(displayText, contextItems)
 
     const historyForLLM = [
       ...pruneMessages(messages).map((m) => ({ role: m.role, content: contentToString(m.content) })),
@@ -356,7 +368,7 @@ export default function App() {
     let haikuReply: string | null = null
 
     if (target === 'both' || target === 'haiku') {
-      haikuReply = await runHaiku(historyForLLM)
+      haikuReply = await runHaiku(historyForLLM, attachments)
     }
 
     if (target === 'both' || target === 'sonnet') {
@@ -367,16 +379,19 @@ export default function App() {
             ...historyForLLM.slice(0, -1),
             {
               role: 'user' as const,
-              content: buildSonnetReviewMessage(userText, haikuReply, contextItems),
+              content: buildSonnetReviewMessage(displayText, haikuReply, contextItems),
             }
           ]
         : historyForLLM
-      await runSonnet(historyForSonnet)
+      await runSonnet(historyForSonnet, attachments)
     }
   }
 
   // Returns the full response text on success, null on error
-  function runHaiku(history: { role: string; content: string }[]): Promise<string | null> {
+  function runHaiku(
+    history: { role: string; content: string }[],
+    attachments: Attachment[] = []
+  ): Promise<string | null> {
     return new Promise((resolve) => {
       const msgId = uid()
       const requestId = uid()
@@ -394,7 +409,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToHaiku(history, requestId, rootPath, haikuModel)
+      window.api.sendToHaiku(history, requestId, rootPath, haikuModel, attachments)
         .then((fullText) => {
           unsubscribeHaikuToken()
           setHaikuStreaming(false)
@@ -413,7 +428,10 @@ export default function App() {
     })
   }
 
-  function runSonnet(history: { role: string; content: string }[]): Promise<string | null> {
+  function runSonnet(
+    history: { role: string; content: string }[],
+    attachments: Attachment[] = []
+  ): Promise<string | null> {
     return new Promise((resolve) => {
       const msgId = uid()
       const requestId = uid()
@@ -431,7 +449,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToSonnet(history, requestId, rootPath, sonnetModel)
+      window.api.sendToSonnet(history, requestId, rootPath, sonnetModel, attachments)
         .then((fullText) => {
           unsubscribeSonnetToken()
           setSonnetStreaming(false)

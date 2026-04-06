@@ -15,8 +15,9 @@ declare global {
       writeFile: (path: string, content: string) => Promise<void>
       listDir: (path: string) => Promise<import('@/types').FileNode[]>
       cancelRequest: (requestId: string) => Promise<void>
-      sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
-      sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
+      pickFile: () => Promise<import('@/types').Attachment[] | null>
+      sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string, attachments?: import('@/types').Attachment[]) => Promise<string>
+      sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string, attachments?: import('@/types').Attachment[]) => Promise<string>
       sendToHaikuAgentic: (userTask: string, requestId: string) => Promise<string>
       sonnetAgenticReview: (args: { filePath: string; content: string; userTask: string }) => Promise<string>
       onHaikuToken: (cb: (token: string) => void) => () => void

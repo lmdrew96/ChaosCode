@@ -7,6 +7,13 @@ interface FileNode {
   children?: FileNode[]
 }
 
+export interface Attachment {
+  name: string
+  mediaType: string
+  data: string
+  size: number
+}
+
 export type Api = {
   // File system
   openFolder: () => Promise<string | null>
@@ -23,9 +30,12 @@ export type Api = {
     contextWindow: number; costInputPer1M: number; costOutputPer1M: number
   }>>
 
+  // File attachments
+  pickFile: () => Promise<Attachment[] | null>
+
   // Chat LLMs
-  sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string) => Promise<string>
-  sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string) => Promise<string>
+  sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string, attachments?: Attachment[]) => Promise<string>
+  sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string, attachments?: Attachment[]) => Promise<string>
 
   // Agentic LLMs
   sendToHaikuPlan: (userTask: string, requestId: string, model?: string) => Promise<string>
@@ -71,8 +81,10 @@ const api: Api = {
 
   getModels: () => ipcRenderer.invoke('llm:models'),
 
-  sendToHaiku: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath, model),
-  sendToSonnet: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath, model),
+  pickFile: () => ipcRenderer.invoke('dialog:pickFile'),
+
+  sendToHaiku: (messages, requestId, rootPath, model, attachments) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath, model, attachments),
+  sendToSonnet: (messages, requestId, rootPath, model, attachments) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath, model, attachments),
 
   sendToHaikuPlan: (userTask, requestId, model) => ipcRenderer.invoke('llm:haiku:plan', userTask, requestId, model),
   sonnetPlanReview: (args) => ipcRenderer.invoke('llm:sonnet:plan-review', args),

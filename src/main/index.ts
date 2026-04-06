@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, clipboard } from 'electron'
 import { join, dirname, resolve, relative, isAbsolute } from 'path'
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'fs'
+import { extname } from 'path'
 import { spawn } from 'child_process'
 import * as dotenv from 'dotenv'
 import Anthropic from '@anthropic-ai/sdk'
@@ -39,6 +40,57 @@ function toAnthropicMessages(messages: Array<{ role: string; content: string }>)
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }))
+}
+
+interface Attachment {
+  name: string
+  mediaType: string
+  data: string
+  size: number
+}
+
+const IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
+function getAttachmentMediaType(filePath: string): string {
+  const ext = extname(filePath).slice(1).toLowerCase()
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    gif: 'image/gif', webp: 'image/webp',
+  }
+  return map[ext] ?? 'text/plain'
+}
+
+function buildMessagesWithAttachments(
+  messages: Array<{ role: string; content: string }>,
+  attachments: Attachment[]
+): Anthropic.MessageParam[] {
+  const base = toAnthropicMessages(messages)
+  if (!attachments.length) return base
+
+  const lastIdx = base.length - 1
+  if (lastIdx < 0 || base[lastIdx].role !== 'user') return base
+
+  const textContent = base[lastIdx].content as string
+  const blocks: Anthropic.ContentBlockParam[] = []
+
+  for (const att of attachments) {
+    if (IMAGE_MEDIA_TYPES.has(att.mediaType)) {
+      blocks.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: att.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+          data: att.data,
+        },
+      })
+    } else {
+      blocks.push({ type: 'text', text: `[Attached file: ${att.name}]\n${att.data}` })
+    }
+  }
+
+  if (textContent) blocks.push({ type: 'text', text: textContent })
+
+  return [...base.slice(0, lastIdx), { role: 'user', content: blocks }]
 }
 
 // ─── Read-only file tool (chat mode) ─────────────────────────────────────────
@@ -176,6 +228,33 @@ ipcMain.handle('fs:openFolder', async () => {
   return result.filePaths[0]
 })
 
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024 // 5 MB
+
+ipcMain.handle('dialog:pickFile', async (): Promise<Attachment[] | null> => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+      { name: 'Text / Code', extensions: ['txt', 'md', 'ts', 'tsx', 'js', 'jsx', 'py', 'json', 'css', 'html', 'yaml', 'toml', 'sh'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+
+  return result.filePaths.map((filePath) => {
+    const stat = statSync(filePath)
+    if (stat.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`${filePath.split('/').pop()} is too large (${(stat.size / 1024 / 1024).toFixed(1)} MB — limit is 5 MB)`)
+    }
+    const name = filePath.split('/').pop() ?? filePath
+    const mediaType = getAttachmentMediaType(filePath)
+    if (IMAGE_MEDIA_TYPES.has(mediaType)) {
+      return { name, mediaType, data: readFileSync(filePath).toString('base64'), size: stat.size }
+    }
+    return { name, mediaType, data: readFileSync(filePath, 'utf-8'), size: stat.size }
+  })
+})
+
 // ─── Provider/model discovery ─────────────────────────────────────────────────
 
 ipcMain.handle('llm:models', () => providerRegistry.allModels())
@@ -198,7 +277,13 @@ function clearCancel(requestId: string): void {
 
 // ─── File system ──────────────────────────────────────────────────────────────
 
+const MAX_READ_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
+
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
+  const stat = statSync(filePath)
+  if (stat.size > MAX_READ_FILE_BYTES) {
+    throw new Error(`File too large to open (${(stat.size / 1024 / 1024).toFixed(1)} MB — limit is 2 MB)`)
+  }
   return readFileSync(filePath, 'utf-8')
 })
 
@@ -206,6 +291,9 @@ ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string)
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, content, 'utf-8')
 })
+
+const STREAM_TIMEOUT_MS = 120_000
+const PLAN_STREAM_TIMEOUT_MS = 60_000
 
 ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string) => {
   const anthropic = createAnthropicClient()
@@ -216,15 +304,20 @@ ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: stri
     messages: [{ role: 'user', content: userTask }]
   })
 
+  const timeout = setTimeout(() => stream.abort(), PLAN_STREAM_TIMEOUT_MS)
   let fullText = ''
   const tokenChannel = `llm:haiku:plan:token:${requestId}`
   const doneChannel = `llm:haiku:plan:done:${requestId}`
-  for await (const chunk of stream) {
-    if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
-    if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
-    const token = chunk.delta.text
-    fullText += token
-    if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
+  try {
+    for await (const chunk of stream) {
+      if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
+      if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
+      const token = chunk.delta.text
+      fullText += token
+      if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
+    }
+  } finally {
+    clearTimeout(timeout)
   }
   if (!event.sender.isDestroyed()) event.sender.send(doneChannel)
   return fullText
@@ -256,15 +349,20 @@ ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: s
     messages: [{ role: 'user', content: userTask }]
   })
 
+  const timeout = setTimeout(() => stream.abort(), STREAM_TIMEOUT_MS)
   let fullText = ''
   const tokenChannel = `llm:haiku:agentic:token:${requestId}`
   const doneChannel = `llm:haiku:agentic:done:${requestId}`
-  for await (const chunk of stream) {
-    if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
-    if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
-    const token = chunk.delta.text
-    fullText += token
-    if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
+  try {
+    for await (const chunk of stream) {
+      if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
+      if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
+      const token = chunk.delta.text
+      fullText += token
+      if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
+    }
+  } finally {
+    clearTimeout(timeout)
   }
   if (!event.sender.isDestroyed()) event.sender.send(doneChannel)
   return fullText
@@ -333,11 +431,12 @@ ipcMain.handle('llm:haiku', async (
   messages: Array<{ role: string; content: string }>,
   requestId: string,
   rootPath?: string | null,
-  model?: string
+  model?: string,
+  attachments?: Attachment[]
 ) => {
   const anthropic = createAnthropicClient()
   const tools = rootPath ? [READ_FILE_TOOL] : undefined
-  let currentMessages: Anthropic.MessageParam[] = toAnthropicMessages(messages)
+  let currentMessages: Anthropic.MessageParam[] = buildMessagesWithAttachments(messages, attachments ?? [])
   let fullText = ''
 
   // Tool loop: keep sending until the model stops requesting tool calls
@@ -350,13 +449,18 @@ ipcMain.handle('llm:haiku', async (
       ...(tools ? { tools } : {}),
     })
 
-    for await (const chunk of stream) {
-      if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
-      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-        const token = chunk.delta.text
-        fullText += token
-        if (!event.sender.isDestroyed()) event.sender.send('llm:haiku:token', token)
+    const timeout = setTimeout(() => stream.abort(), STREAM_TIMEOUT_MS)
+    try {
+      for await (const chunk of stream) {
+        if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
+        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+          const token = chunk.delta.text
+          fullText += token
+          if (!event.sender.isDestroyed()) event.sender.send('llm:haiku:token', token)
+        }
       }
+    } finally {
+      clearTimeout(timeout)
     }
 
     if (isCancelled(requestId)) break
@@ -386,11 +490,12 @@ ipcMain.handle('llm:sonnet', async (
   messages: Array<{ role: string; content: string }>,
   requestId: string,
   rootPath?: string | null,
-  model?: string
+  model?: string,
+  attachments?: Attachment[]
 ) => {
   const anthropic = createAnthropicClient()
   const tools = rootPath ? [READ_FILE_TOOL] : undefined
-  let currentMessages: Anthropic.MessageParam[] = toAnthropicMessages(messages)
+  let currentMessages: Anthropic.MessageParam[] = buildMessagesWithAttachments(messages, attachments ?? [])
   let fullText = ''
 
   for (;;) {
@@ -402,13 +507,18 @@ ipcMain.handle('llm:sonnet', async (
       ...(tools ? { tools } : {}),
     })
 
-    for await (const chunk of stream) {
-      if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
-      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-        const token = chunk.delta.text
-        fullText += token
-        if (!event.sender.isDestroyed()) event.sender.send('llm:sonnet:token', token)
+    const timeout = setTimeout(() => stream.abort(), STREAM_TIMEOUT_MS)
+    try {
+      for await (const chunk of stream) {
+        if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
+        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+          const token = chunk.delta.text
+          fullText += token
+          if (!event.sender.isDestroyed()) event.sender.send('llm:sonnet:token', token)
+        }
       }
+    } finally {
+      clearTimeout(timeout)
     }
 
     if (isCancelled(requestId)) break
