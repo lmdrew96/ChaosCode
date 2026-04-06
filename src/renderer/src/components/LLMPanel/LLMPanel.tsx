@@ -3,11 +3,39 @@ import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart } from '@/types'
+import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart, ToolUsePart, ToolResultPart } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
 import type { ResolvedTheme } from '@/hooks/useTheme'
 import TerminalPanel from '@/components/Terminal/TerminalPanel'
+import StepContainer from './StepContainer'
+import ThinkingIndicator from './ThinkingIndicator'
 import './markdown.css'
+
+// ─── Tool pairing ─────────────────────────────────────────────────────────────
+// Group each tool_use with its matching tool_result so StepContainer can
+// show status and result together. tool_result parts are consumed here.
+
+type ProcessedPart =
+  | { kind: 'passthrough'; part: MessagePart }
+  | { kind: 'step'; toolUse: ToolUsePart; toolResult: ToolResultPart | null }
+
+function pairToolParts(parts: MessagePart[]): ProcessedPart[] {
+  const resultMap = new Map<string, ToolResultPart>()
+  for (const p of parts) {
+    if (p.type === 'tool_result') resultMap.set(p.toolResult.toolUseId, p)
+  }
+
+  const out: ProcessedPart[] = []
+  for (const p of parts) {
+    if (p.type === 'tool_result') continue // consumed by pairing
+    if (p.type === 'tool_use') {
+      out.push({ kind: 'step', toolUse: p, toolResult: resultMap.get(p.toolUse.id) ?? null })
+    } else {
+      out.push({ kind: 'passthrough', part: p })
+    }
+  }
+  return out
+}
 
 interface Props {
   messages: Message[]
@@ -155,6 +183,8 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
     )
   }
 
+  const processed = pairToolParts(parts)
+
   return (
     <div className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
       {!isUser && (
@@ -172,7 +202,19 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
             : 'bg-accent-claude/10 border border-accent-claude/25 text-primary'
       }`}>
         <div className="flex flex-col gap-2">
-          {parts.map((part, index) => {
+          {processed.map((item, index) => {
+            if (item.kind === 'step') {
+              return (
+                <StepContainer
+                  key={`${msg.id}-step-${item.toolUse.toolUse.id}`}
+                  toolUse={item.toolUse}
+                  toolResult={item.toolResult}
+                />
+              )
+            }
+
+            const part = item.part
+
             if (part.type === 'text') {
               return <div key={`${msg.id}-text-${index}`}>{renderText(part.text)}</div>
             }
@@ -184,24 +226,6 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
                   className="text-[10px] rounded border border-border bg-surface-2 px-2 py-1 text-secondary"
                 >
                   image: {part.url}
-                </div>
-              )
-            }
-
-            if (part.type === 'tool_use') {
-              const isRunCommand = part.toolUse.name === 'run_command'
-              return (
-                <div
-                  key={`${msg.id}-tool-use-${part.toolUse.id}`}
-                  className="rounded border border-accent-gemini/25 bg-accent-gemini/10 px-2 py-1.5"
-                >
-                  <div className="text-[9px] uppercase tracking-wider text-accent-gemini">Tool Call</div>
-                  <div className="text-[11px] text-primary">{part.toolUse.name}</div>
-                  <div className="text-[10px] text-muted mt-0.5 font-mono">
-                    {isRunCommand
-                      ? String(part.toolUse.input.command ?? '')
-                      : String(part.toolUse.input.path ?? '')}
-                  </div>
                 </div>
               )
             }
@@ -234,23 +258,7 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
               )
             }
 
-            return (
-              <div
-                key={`${msg.id}-tool-result-${part.toolResult.toolUseId}-${index}`}
-                className={`rounded border px-2 py-1.5 ${
-                  part.toolResult.isError
-                    ? 'border-danger/30 bg-danger/10'
-                    : 'border-accent-claude/25 bg-accent-claude/10'
-                }`}
-              >
-                <div className={`text-[9px] uppercase tracking-wider ${part.toolResult.isError ? 'text-danger' : 'text-accent-claude'}`}>
-                  Tool Result
-                </div>
-                <div className={`text-[10px] mt-0.5 leading-relaxed ${part.toolResult.isError ? 'text-danger/90' : 'text-secondary'}`}>
-                  {part.toolResult.content}
-                </div>
-              </div>
-            )
+            return null
           })}
         </div>
       </div>
@@ -454,6 +462,11 @@ export default function LLMPanel({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Thinking indicator — shown during planning before the first token arrives */}
+      {agenticMode && agenticState.phase === 'planning' && (
+        <ThinkingIndicator phase={agenticState.phase} />
       )}
 
       {/* Agentic progress bar */}

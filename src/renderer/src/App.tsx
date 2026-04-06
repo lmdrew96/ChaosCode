@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import MonacoEditorPanel from '@/components/Editor/MonacoEditor'
 import FileTree from '@/components/FileTree/FileTree'
 import LLMPanel from '@/components/LLMPanel/LLMPanel'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import { useAgenticMode } from '@/hooks/useAgenticMode'
 import { useTheme, type ThemePreference } from '@/hooks/useTheme'
 import { PANEL_HANDLE_WIDTH, useResizablePanels } from '@/hooks/useResizablePanels'
@@ -551,12 +552,14 @@ export default function App() {
 
         {/* Editor — center */}
         <main className="flex-1 min-w-0 overflow-hidden bg-surface-0">
-          <MonacoEditorPanel
-            file={openFile}
-            onChange={handleEditorChange}
-            theme={resolvedTheme}
-            addedLines={openFile ? agenticState.fileDiffs[openFile.path]?.addedLines : undefined}
-          />
+          <ErrorBoundary label="Editor">
+            <MonacoEditorPanel
+              file={openFile}
+              onChange={handleEditorChange}
+              theme={resolvedTheme}
+              addedLines={openFile ? agenticState.fileDiffs[openFile.path]?.addedLines : undefined}
+            />
+          </ErrorBoundary>
         </main>
 
         <div
@@ -585,24 +588,26 @@ export default function App() {
           className="flex flex-col flex-shrink-0 border-l border-border/70 bg-surface-1 overflow-hidden min-w-0"
           style={{ width: rightCollapsed ? '0px' : `${rightWidth}px` }}
         >
-          <LLMPanel
-            messages={messages}
-            reviews={reviews}
-            pinnedFiles={pinnedFiles}
-            rootPath={rootPath}
-            target={target}
-            onTargetChange={setTarget}
-            onSend={handleSend}
-            onCancel={handleCancel}
-            haikuStreaming={haikuStreaming}
-            sonnetStreaming={sonnetStreaming}
-            agenticMode={agenticMode}
-            onAgenticModeChange={setAgenticMode}
-            agenticState={agenticState}
-            breakingIssue={breakingIssue}
-            onDismissBreaking={dismissInterrupt}
-            theme={resolvedTheme}
-          />
+          <ErrorBoundary label="Chat panel">
+            <LLMPanel
+              messages={messages}
+              reviews={reviews}
+              pinnedFiles={pinnedFiles}
+              rootPath={rootPath}
+              target={target}
+              onTargetChange={setTarget}
+              onSend={handleSend}
+              onCancel={handleCancel}
+              haikuStreaming={haikuStreaming}
+              sonnetStreaming={sonnetStreaming}
+              agenticMode={agenticMode}
+              onAgenticModeChange={setAgenticMode}
+              agenticState={agenticState}
+              breakingIssue={breakingIssue}
+              onDismissBreaking={dismissInterrupt}
+              theme={resolvedTheme}
+            />
+          </ErrorBoundary>
         </aside>
       </div>
     </div>
