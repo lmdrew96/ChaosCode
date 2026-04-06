@@ -93,7 +93,7 @@ function buildMessagesWithAttachments(
   return [...base.slice(0, lastIdx), { role: 'user', content: blocks }]
 }
 
-// ─── Read-only file tool (chat mode) ─────────────────────────────────────────
+// ─── Chat-mode tools ──────────────────────────────────────────────────────────
 
 const READ_FILE_TOOL: Anthropic.Tool = {
   name: 'read_file',
@@ -110,6 +110,22 @@ const READ_FILE_TOOL: Anthropic.Tool = {
     required: ['path'],
   },
 }
+
+const RUN_COMMAND_TOOL: Anthropic.Tool = {
+  name: 'run_terminal_command',
+  description:
+    'Execute a shell command in the project root and return stdout/stderr. Use for git operations (status, diff, add, commit, push, pull, log), builds, tests, and linters. Prefer non-destructive commands; never rm -rf.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      command: { type: 'string', description: 'Shell command to run' },
+      cwd: { type: 'string', description: 'Working directory relative to project root (optional)' },
+    },
+    required: ['command'],
+  },
+}
+
+const CHAT_TOOLS = [READ_FILE_TOOL, RUN_COMMAND_TOOL]
 
 /**
  * Resolve a model-supplied path to an absolute path and verify it stays
@@ -138,6 +154,51 @@ function executeReadFile(
     const safePath = resolveSafePath(rootPath, input.path)
     const content = readFileSync(safePath, 'utf-8')
     return { type: 'tool_result', tool_use_id: toolUse.id, content }
+  } catch (err) {
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content: err instanceof Error ? err.message : String(err),
+      is_error: true,
+    }
+  }
+}
+
+/**
+ * Execute a single run_terminal_command tool call and return a ToolResultBlockParam.
+ */
+async function executeRunCommand(
+  rootPath: string | null | undefined,
+  toolUse: Anthropic.ToolUseBlock
+): Promise<Anthropic.ToolResultBlockParam> {
+  try {
+    if (!rootPath) throw new Error('No project folder is open')
+    const input = toolUse.input as { command?: string; cwd?: string }
+    if (!input.command) throw new Error('Missing required "command" argument')
+
+    const resolvedCwd = resolveSafePath(rootPath, input.cwd || '')
+    const shellBin = process.platform === 'win32' ? 'cmd' : (process.env.SHELL || '/bin/sh')
+    const shellFlag = process.platform === 'win32' ? '/c' : '-c'
+
+    const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((res) => {
+      const proc = spawn(shellBin, [shellFlag, input.command!], {
+        cwd: resolvedCwd,
+        env: process.env,
+      })
+      let stdout = ''
+      let stderr = ''
+      proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
+      proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+      proc.on('close', (code) => res({ stdout, stderr, exitCode: code ?? 0 }))
+      proc.on('error', (err) => res({ stdout: '', stderr: err.message, exitCode: 1 }))
+    })
+
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content: output || `Exit code: ${result.exitCode}`,
+    }
   } catch (err) {
     return {
       type: 'tool_result',
@@ -452,7 +513,7 @@ ipcMain.handle('llm:haiku', async (
   attachments?: Attachment[]
 ) => {
   const anthropic = createAnthropicClient()
-  const tools = rootPath ? [READ_FILE_TOOL] : undefined
+  const tools = rootPath ? CHAT_TOOLS : undefined
   let currentMessages: Anthropic.MessageParam[] = buildMessagesWithAttachments(messages, attachments ?? [])
   let fullText = ''
 
@@ -489,8 +550,11 @@ ipcMain.handle('llm:haiku', async (
 
     if (toolUses.length === 0 || finalMsg.stop_reason !== 'tool_use') break
 
-    // Execute tool calls and loop back
-    const toolResults = toolUses.map((t) => executeReadFile(rootPath, t))
+    const toolResults = await Promise.all(toolUses.map((t) =>
+      t.name === 'run_terminal_command'
+        ? executeRunCommand(rootPath, t)
+        : executeReadFile(rootPath, t)
+    ))
     currentMessages = [
       ...currentMessages,
       { role: 'assistant', content: finalMsg.content },
@@ -511,7 +575,7 @@ ipcMain.handle('llm:sonnet', async (
   attachments?: Attachment[]
 ) => {
   const anthropic = createAnthropicClient()
-  const tools = rootPath ? [READ_FILE_TOOL] : undefined
+  const tools = rootPath ? CHAT_TOOLS : undefined
   let currentMessages: Anthropic.MessageParam[] = buildMessagesWithAttachments(messages, attachments ?? [])
   let fullText = ''
 
@@ -547,7 +611,11 @@ ipcMain.handle('llm:sonnet', async (
 
     if (toolUses.length === 0 || finalMsg.stop_reason !== 'tool_use') break
 
-    const toolResults = toolUses.map((t) => executeReadFile(rootPath, t))
+    const toolResults = await Promise.all(toolUses.map((t) =>
+      t.name === 'run_terminal_command'
+        ? executeRunCommand(rootPath, t)
+        : executeReadFile(rootPath, t)
+    ))
     currentMessages = [
       ...currentMessages,
       { role: 'assistant', content: finalMsg.content },

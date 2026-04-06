@@ -24,6 +24,10 @@ read_file: Read the full contents of any file in the open project.
   Input: { "path": "relative/path/from/project/root.ext" }
   Use for: inspecting a file before answering a question or suggesting changes.
   Rules: skip files already provided in <context_bundle>; do not read .env or secrets files.
+run_terminal_command: Execute a shell command in the project root and return stdout/stderr.
+  Input: { "command": "shell command", "cwd": "optional/relative/path" }
+  Use for: git operations (status, diff, add, commit, push, pull, log), builds, tests, linters.
+  Rules: prefer non-destructive commands; never rm -rf; always run git status/diff before committing.
 </available_tools>
 <response_contract>
 - For normal chat, use concise markdown.
@@ -52,6 +56,10 @@ read_file: Read the full contents of any file in the open project.
   Input: { "path": "relative/path/from/project/root.ext" }
   Use for: verifying Haiku's file references or inspecting code before correcting a draft.
   Rules: skip files already provided in <context_bundle>; do not read .env or secrets files.
+run_terminal_command: Execute a shell command in the project root and return stdout/stderr.
+  Input: { "command": "shell command", "cwd": "optional/relative/path" }
+  Use for: git operations (status, diff, add, commit, push, pull, log), builds, tests, linters.
+  Rules: prefer non-destructive commands; never rm -rf; always run git status/diff before committing.
 </available_tools>
 <response_contract>
 - For normal chat, return the best final answer directly.
