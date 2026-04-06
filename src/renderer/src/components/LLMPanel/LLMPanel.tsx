@@ -6,12 +6,14 @@ import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { Message, LLMTarget, ReviewEntry, OpenFile, MessagePart } from '@/types'
 import type { AgenticState, BreakingIssue } from '@/hooks/useAgenticMode'
 import type { ResolvedTheme } from '@/hooks/useTheme'
+import TerminalPanel from '@/components/Terminal/TerminalPanel'
 import './markdown.css'
 
 interface Props {
   messages: Message[]
   reviews: ReviewEntry[]
   pinnedFiles: OpenFile[]
+  rootPath: string | null
   target: LLMTarget
   onTargetChange: (t: LLMTarget) => void
   onSend: (text: string) => void
@@ -187,6 +189,7 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
             }
 
             if (part.type === 'tool_use') {
+              const isRunCommand = part.toolUse.name === 'run_command'
               return (
                 <div
                   key={`${msg.id}-tool-use-${part.toolUse.id}`}
@@ -194,7 +197,39 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
                 >
                   <div className="text-[9px] uppercase tracking-wider text-accent-gemini">Tool Call</div>
                   <div className="text-[11px] text-primary">{part.toolUse.name}</div>
-                  <div className="text-[10px] text-muted mt-0.5">{String(part.toolUse.input.path ?? '')}</div>
+                  <div className="text-[10px] text-muted mt-0.5 font-mono">
+                    {isRunCommand
+                      ? String(part.toolUse.input.command ?? '')
+                      : String(part.toolUse.input.path ?? '')}
+                  </div>
+                </div>
+              )
+            }
+
+            if (part.type === 'terminal_output') {
+              const { command, stdout, stderr, exitCode } = part.terminalOutput
+              const success = exitCode === 0
+              return (
+                <div
+                  key={`${msg.id}-terminal-${index}`}
+                  className="rounded border border-border bg-surface-0 overflow-hidden font-mono text-[10px]"
+                >
+                  <div className="flex items-center justify-between px-2 py-1 bg-surface-2 border-b border-border/70">
+                    <span className="text-muted">$ {command}</span>
+                    <span className={success ? 'text-green-400' : 'text-danger'}>
+                      exit {exitCode}
+                    </span>
+                  </div>
+                  {stdout && (
+                    <pre className="px-2 py-1.5 text-secondary whitespace-pre-wrap break-all max-h-48 overflow-y-auto leading-relaxed">
+                      {stdout}
+                    </pre>
+                  )}
+                  {stderr && (
+                    <pre className="px-2 py-1.5 text-danger/80 whitespace-pre-wrap break-all border-t border-border/70 leading-relaxed">
+                      {stderr}
+                    </pre>
+                  )}
                 </div>
               )
             }
@@ -233,6 +268,7 @@ export default function LLMPanel({
   messages,
   reviews,
   pinnedFiles,
+  rootPath,
   target,
   onTargetChange,
   onSend,
@@ -249,6 +285,9 @@ export default function LLMPanel({
   const [input, setInput] = useState('')
   const [showReviews, setShowReviews] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalHeight, setTerminalHeight] = useState(200)
+  const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -288,6 +327,26 @@ export default function LLMPanel({
     }
   }, [messages, isNearBottom, scrollToBottom])
 
+  function handleTerminalDragStart(e: React.PointerEvent) {
+    e.preventDefault()
+    terminalDragRef.current = { startY: e.clientY, startH: terminalHeight }
+    window.addEventListener('pointermove', handleTerminalDragMove)
+    window.addEventListener('pointerup', handleTerminalDragEnd)
+  }
+
+  function handleTerminalDragMove(e: PointerEvent) {
+    if (!terminalDragRef.current) return
+    const delta = terminalDragRef.current.startY - e.clientY
+    const next = Math.max(100, Math.min(500, terminalDragRef.current.startH + delta))
+    setTerminalHeight(next)
+  }
+
+  function handleTerminalDragEnd() {
+    terminalDragRef.current = null
+    window.removeEventListener('pointermove', handleTerminalDragMove)
+    window.removeEventListener('pointerup', handleTerminalDragEnd)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -325,27 +384,40 @@ export default function LLMPanel({
             }`} />
           </button>
         </div>
-        {!agenticMode && (
-          <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border/70">
-            {TARGETS.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => onTargetChange(value)}
-                className={`px-2 py-0.5 text-[10px] rounded transition-all ${
-                  target === value
-                    ? value === 'haiku'
-                      ? 'bg-accent-gemini/20 text-accent-gemini'
-                      : value === 'sonnet'
-                        ? 'bg-accent-claude/20 text-accent-claude'
-                        : 'bg-surface-3 text-primary'
-                    : 'text-secondary hover:text-primary'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {!agenticMode && (
+            <div className="flex gap-1 bg-surface-2 rounded-md p-0.5 border border-border/70">
+              {TARGETS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => onTargetChange(value)}
+                  className={`px-2 py-0.5 text-[10px] rounded transition-all ${
+                    target === value
+                      ? value === 'haiku'
+                        ? 'bg-accent-gemini/20 text-accent-gemini'
+                        : value === 'sonnet'
+                          ? 'bg-accent-claude/20 text-accent-claude'
+                          : 'bg-surface-3 text-primary'
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => setTerminalOpen((v) => !v)}
+            title={terminalOpen ? 'Hide terminal' : 'Show terminal'}
+            className={`px-2 py-0.5 text-[10px] rounded border transition-all font-mono ${
+              terminalOpen
+                ? 'bg-surface-3 border-border text-primary'
+                : 'border-border/50 text-secondary hover:text-primary hover:border-border'
+            }`}
+          >
+            &gt;_
+          </button>
+        </div>
       </div>
 
       {agenticMode && (
@@ -530,6 +602,23 @@ export default function LLMPanel({
               {f.path.split('/').pop()}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Terminal panel */}
+      {terminalOpen && (
+        <div className="flex flex-col flex-shrink-0 border-t border-border/70 bg-surface-0" style={{ height: terminalHeight }}>
+          {/* Drag handle */}
+          <div
+            onPointerDown={handleTerminalDragStart}
+            className="flex items-center justify-between px-3 py-1 border-b border-border/70 bg-surface-1 cursor-ns-resize select-none flex-shrink-0"
+          >
+            <span className="text-[9px] uppercase tracking-widest text-subtle font-mono">Terminal</span>
+            <span className="text-[9px] text-subtle opacity-40">⠿</span>
+          </div>
+          <div className="flex-1 min-h-0 p-1">
+            <TerminalPanel cwd={rootPath ?? undefined} theme={theme} />
+          </div>
         </div>
       )}
 

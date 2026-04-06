@@ -65,6 +65,33 @@ const MONACO_THEMES: Record<ResolvedTheme, Monaco.editor.IStandaloneThemeData> =
   },
 }
 
+function handleBeforeMount(monaco: typeof Monaco) {
+  // Configure TypeScript/JavaScript language services before any editor or model
+  // is created. This prevents the race condition where Monaco starts processing
+  // the file before diagnostics are disabled.
+
+  // Disable all diagnostics — Monaco has no access to node_modules or tsconfig,
+  // so type errors and import resolution failures are always false positives.
+  const noValidation = {
+    noSemanticValidation: true,
+    noSyntacticValidation: true,
+    noSuggestionDiagnostics: true,
+  }
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation)
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation)
+
+  // Enable JSX so TSX/JSX files parse without every '<' being a syntax error.
+  const compilerOptions = {
+    jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+    allowSyntheticDefaultImports: true,
+    esModuleInterop: true,
+    allowJs: true,
+    target: monaco.languages.typescript.ScriptTarget.ESNext,
+  }
+  monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
+  monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
+}
+
 export default function MonacoEditorPanel({ file, onChange, theme }: Props) {
   const monaco = useMonaco()
 
@@ -91,6 +118,7 @@ export default function MonacoEditorPanel({ file, onChange, theme }: Props) {
       language={file.language}
       value={file.content}
       theme={theme === 'dark' ? 'chaos-dark' : 'chaos-light'}
+      beforeMount={handleBeforeMount}
       onChange={(val) => onChange(val ?? '')}
       options={{
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",

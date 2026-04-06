@@ -1,14 +1,16 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import MonacoEditorPanel from '@/components/Editor/MonacoEditor'
 import FileTree from '@/components/FileTree/FileTree'
 import LLMPanel from '@/components/LLMPanel/LLMPanel'
 import { useAgenticMode } from '@/hooks/useAgenticMode'
 import { useTheme, type ThemePreference } from '@/hooks/useTheme'
 import { PANEL_HANDLE_WIDTH, useResizablePanels } from '@/hooks/useResizablePanels'
+import { useSessionStorage, type StoredSession } from '@/hooks/useSessionStorage'
 import {
   openFileContextItem,
   fileTreeContextItem,
   buildLLMMessage,
+  buildAgenticCarryover,
   buildSonnetReviewMessage,
 } from '@/services/context'
 import { contentToString } from '@/types'
@@ -82,12 +84,100 @@ export default function App() {
   const [haikuStreaming, setHaikuStreaming] = useState(false)
   const [sonnetStreaming, setSonnetStreaming] = useState(false)
   const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, toggleCollapse, startResize } = useResizablePanels(layoutRef)
+  const { sessions, activeSessionId, activeSession, saveSession, newSession, switchSession, deleteSession } = useSessionStorage()
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  // Prevents auto-save from firing while a session is being loaded into state
+  const isLoadingSession = useRef(false)
 
   // Refs to accumulate streamed content without extra re-renders
   const haikuMsgId = useRef<string | null>(null)
   const sonnetMsgId = useRef<string | null>(null)
   // Active request ID for cancellation (Continue-style AbortController adapted for IPC)
   const activeRequestId = useRef<string | null>(null)
+
+  // --- Session restore ---
+
+  async function applySession(session: StoredSession) {
+    isLoadingSession.current = true
+    setMessages(session.messages)
+    setReviews(session.reviews)
+    setTarget(session.target)
+    setAgenticMode(session.agenticMode)
+    setRootPath(session.rootPath)
+    setRootName(session.rootPath?.split('/').pop())
+
+    if (session.rootPath) {
+      const nodes = await window.api.listDir(session.rootPath).catch(() => [] as FileNode[])
+      setFileTree(nodes)
+    } else {
+      setFileTree([])
+    }
+
+    if (session.openFilePath) {
+      await window.api.readFile(session.openFilePath)
+        .then((content) => setOpenFile({
+          path: session.openFilePath!,
+          content,
+          language: inferLanguage(session.openFilePath!.split('/').pop() ?? ''),
+        }))
+        .catch(() => setOpenFile(null))
+    } else {
+      setOpenFile(null)
+    }
+
+    if (session.pinnedFilePaths.length > 0) {
+      const pinned = await Promise.all(
+        session.pinnedFilePaths.map((path) =>
+          window.api.readFile(path)
+            .then((content): OpenFile => ({ path, content, language: inferLanguage(path.split('/').pop() ?? '') }))
+            .catch(() => null)
+        )
+      )
+      setPinnedFiles(pinned.filter((f): f is OpenFile => f !== null))
+    } else {
+      setPinnedFiles([])
+    }
+
+    isLoadingSession.current = false
+  }
+
+  // Load the active session once on mount
+  useEffect(() => {
+    if (activeSession) void applySession(activeSession)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-save whenever session content changes (debounced inside saveSession)
+  useEffect(() => {
+    if (isLoadingSession.current) return
+    saveSession(activeSessionId, {
+      rootPath,
+      openFilePath: openFile?.path ?? null,
+      pinnedFilePaths: pinnedFiles.map((f) => f.path),
+      messages,
+      reviews,
+      target,
+      agenticMode,
+    })
+  }, [messages, reviews, rootPath, openFile?.path, pinnedFiles, target, agenticMode, activeSessionId, saveSession])
+
+  async function handleSwitchSession(id: string) {
+    const session = switchSession(id)
+    if (session) await applySession(session)
+    setSessionsOpen(false)
+  }
+
+  async function handleNewSession() {
+    const session = newSession()
+    await applySession(session)
+    setSessionsOpen(false)
+  }
+
+  async function handleDeleteSession(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    const fallback = deleteSession(id)
+    if (fallback) await applySession(fallback)
+  }
 
   // --- File system ---
 
@@ -177,7 +267,14 @@ export default function App() {
 
   async function handleSend(userText: string) {
     if (agenticMode) {
-      return runAgenticTask(userText)
+      const contextItems = buildContextItems()
+      const historyForCarryover = pruneMessages(messages)
+        .map((m) => ({ role: m.role, content: contentToString(m.content) }))
+
+      return runAgenticTask(
+        userText,
+        buildAgenticCarryover(historyForCarryover, contextItems)
+      )
     }
 
     const userMsg: Message = {
@@ -238,7 +335,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToHaiku(history, requestId)
+      window.api.sendToHaiku(history, requestId, rootPath)
         .then((fullText) => {
           setHaikuStreaming(false)
           activeRequestId.current = null
@@ -276,7 +373,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToSonnet(history, requestId)
+      window.api.sendToSonnet(history, requestId, rootPath)
         .then((fullText) => {
           setSonnetStreaming(false)
           activeRequestId.current = null
@@ -302,6 +399,67 @@ export default function App() {
       >
         <div className="ml-16 flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <span className="text-[11px] font-semibold tracking-widest text-secondary uppercase">ChaosCode</span>
+
+          {/* Session switcher */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSessionsOpen((v) => !v)}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-subtle hover:text-primary hover:bg-surface-2 transition-colors"
+            >
+              <span className="max-w-[140px] truncate">{activeSession?.name ?? 'Session'}</span>
+              <span className="text-[8px]">▾</span>
+            </button>
+
+            {sessionsOpen && (
+              <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 z-40" onClick={() => setSessionsOpen(false)} />
+                {/* Dropdown */}
+                <div className="absolute left-0 top-full mt-1 z-50 w-56 rounded-md border border-border bg-surface-1 shadow-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={handleNewSession}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-[10px] text-secondary hover:text-primary hover:bg-surface-2 transition-colors border-b border-border/70"
+                  >
+                    <span>+</span>
+                    <span className="uppercase tracking-widest">New Session</span>
+                  </button>
+                  <div className="max-h-64 overflow-y-auto">
+                    {sessions.map((s) => (
+                      <div
+                        key={s.id}
+                        className={`group flex items-center gap-1 px-3 py-2 cursor-pointer transition-colors ${
+                          s.id === activeSessionId
+                            ? 'bg-surface-2 text-primary'
+                            : 'text-secondary hover:bg-surface-2 hover:text-primary'
+                        }`}
+                        onClick={() => void handleSwitchSession(s.id)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[10px] truncate">{s.name}</div>
+                          <div className="text-[9px] text-subtle truncate">
+                            {s.messages.length} message{s.messages.length !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                        {sessions.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => void handleDeleteSession(e, s.id)}
+                            className="ml-1 flex-shrink-0 opacity-0 group-hover:opacity-100 rounded px-1 text-[10px] text-subtle hover:text-primary transition-opacity"
+                            title="Delete session"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {openFile && (
             <>
               <span className="text-border/70">›</span>
@@ -423,6 +581,7 @@ export default function App() {
             messages={messages}
             reviews={reviews}
             pinnedFiles={pinnedFiles}
+            rootPath={rootPath}
             target={target}
             onTargetChange={setTarget}
             onSend={handleSend}

@@ -18,8 +18,8 @@ export type Api = {
   cancelRequest: (requestId: string) => Promise<void>
 
   // Chat LLMs
-  sendToHaiku: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
-  sendToSonnet: (messages: { role: string; content: string }[], requestId: string) => Promise<string>
+  sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
+  sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
 
   // Agentic LLMs
   sendToHaikuAgentic: (userTask: string, requestId: string) => Promise<string>
@@ -37,6 +37,17 @@ export type Api = {
   onSonnetToken: (cb: (token: string) => void) => void
   onSonnetDone: (cb: () => void) => void
   removeAllListeners: (channel: string) => void
+
+  // Terminal — interactive PTY
+  terminalCreate: (cols: number, rows: number, cwd?: string) => Promise<string>
+  terminalWrite: (id: string, data: string) => Promise<void>
+  terminalResize: (id: string, cols: number, rows: number) => Promise<void>
+  terminalKill: (id: string) => Promise<void>
+  onTerminalData: (id: string, cb: (data: string) => void) => () => void
+  onTerminalExit: (id: string, cb: (exitCode: number) => void) => () => void
+
+  // Terminal — run command (for agents)
+  runCommand: (command: string, cwd?: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 }
 
 const api: Api = {
@@ -47,8 +58,8 @@ const api: Api = {
 
   cancelRequest: (requestId) => ipcRenderer.invoke('llm:cancel', requestId),
 
-  sendToHaiku: (messages, requestId) => ipcRenderer.invoke('llm:haiku', messages, requestId),
-  sendToSonnet: (messages, requestId) => ipcRenderer.invoke('llm:sonnet', messages, requestId),
+  sendToHaiku: (messages, requestId, rootPath) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath),
+  sendToSonnet: (messages, requestId, rootPath) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath),
 
   sendToHaikuAgentic: (userTask, requestId) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId),
   sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),
@@ -69,7 +80,26 @@ const api: Api = {
   },
   onSonnetToken: (cb) => { ipcRenderer.on('llm:sonnet:token', (_e, token) => cb(token)) },
   onSonnetDone: (cb) => { ipcRenderer.on('llm:sonnet:done', () => cb()) },
-  removeAllListeners: (channel) => { ipcRenderer.removeAllListeners(channel) }
+  removeAllListeners: (channel) => { ipcRenderer.removeAllListeners(channel) },
+
+  terminalCreate: (cols, rows, cwd) => ipcRenderer.invoke('terminal:create', cols, rows, cwd),
+  terminalWrite: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
+  terminalResize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),
+  terminalKill: (id) => ipcRenderer.invoke('terminal:kill', id),
+  onTerminalData: (id, cb) => {
+    const channel = `terminal:data:${id}`
+    const listener = (_e: Electron.IpcRendererEvent, data: string) => cb(data)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+  onTerminalExit: (id, cb) => {
+    const channel = `terminal:exit:${id}`
+    const listener = (_e: Electron.IpcRendererEvent, exitCode: number) => cb(exitCode)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+
+  runCommand: (command, cwd) => ipcRenderer.invoke('terminal:run-command', command, cwd),
 }
 
 contextBridge.exposeInMainWorld('api', api)

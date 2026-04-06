@@ -7,6 +7,7 @@
 import type { ContextItem, FileNode, OpenFile } from '@/types'
 
 const MAX_CONTEXT_CHARS = 24_000
+const MAX_AGENTIC_HISTORY_CHARS = 12_000
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,43 @@ export function buildSonnetReviewMessage(userText: string, contextItems: Context
   ].join('\n\n')
 }
 
+export function buildAgenticCarryover(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  contextItems: ContextItem[]
+): string {
+  const historyXml = serializeAgenticHistory(messages)
+  const contextXml = serializeContextItems(contextItems)
+
+  return [
+    historyXml ? `<chat_history>\n${historyXml}\n</chat_history>` : '',
+    contextXml ? `<context_bundle>\n${contextXml}\n</context_bundle>` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
+function serializeAgenticHistory(messages: Array<{ role: 'user' | 'assistant'; content: string }>): string {
+  if (messages.length === 0) return ''
+
+  const kept: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  let totalChars = 0
+
+  // Keep the most recent history that fits within a deterministic cap.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    const next = msg.content.length
+    if (totalChars + next > MAX_AGENTIC_HISTORY_CHARS && kept.length > 0) break
+    kept.unshift(msg)
+    totalChars += next
+  }
+
+  return kept
+    .map((msg) => [
+      `<message role="${msg.role}">`,
+      escapeText(msg.content),
+      '</message>',
+    ].join('\n'))
+    .join('\n\n')
+}
+
 function escapeAttr(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -106,3 +144,11 @@ function escapeAttr(value: string): string {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
 }
+
+function escapeText(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+

@@ -30,7 +30,17 @@ export interface ToolResultPart {
   }
 }
 
-export type MessagePart = TextPart | ImagePart | ToolUsePart | ToolResultPart
+export interface TerminalOutputPart {
+  type: 'terminal_output'
+  terminalOutput: {
+    command: string
+    stdout: string
+    stderr: string
+    exitCode: number
+  }
+}
+
+export type MessagePart = TextPart | ImagePart | ToolUsePart | ToolResultPart | TerminalOutputPart
 export type MessageContent = string | MessagePart[]
 
 // ─── Context items ────────────────────────────────────────────────────────────
@@ -110,6 +120,7 @@ export function contentToString(content: MessageContent): string {
       if (p.type === 'text') return p.text
       if (p.type === 'image') return `[image: ${p.url}]`
       if (p.type === 'tool_use') return `[tool_use: ${p.toolUse.name}]`
+      if (p.type === 'terminal_output') return `[$ ${p.terminalOutput.command}]\n${p.terminalOutput.stdout}${p.terminalOutput.stderr ? `\nstderr: ${p.terminalOutput.stderr}` : ''}`
       return `[tool_result: ${p.toolResult.isError ? 'error' : 'ok'}] ${p.toolResult.content}`
     })
     .join('\n')

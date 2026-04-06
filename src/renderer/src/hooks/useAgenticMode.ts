@@ -3,7 +3,7 @@ import { parseReview, parseStreamToolCalls } from '@/services/agenticParser'
 import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
 import { ToolRegistry } from '@/services/toolRegistry'
-import type { FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry } from '@/types'
+import type { FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
 
 function toLines(text: string): string[] {
   if (!text) return []
@@ -333,7 +333,7 @@ export function useAgenticMode({
     * Main agentic entry point. Streams Haiku, parses tool calls, executes tools in parallel.
    */
   const runAgenticTask = useCallback(
-    async (userTask: string) => {
+    async (userTask: string, chatCarryover = '') => {
       if (!rootPath) {
         setMessages((prev) => [
           ...prev,
@@ -390,6 +390,7 @@ export function useAgenticMode({
 
       const fullTask = [
         '<agentic_task_input>',
+        chatCarryover ? `<chat_carryover>\n${chatCarryover}\n</chat_carryover>` : '',
         '<project_tree>',
         treeText,
         '</project_tree>',
@@ -398,7 +399,7 @@ export function useAgenticMode({
         userTask,
         '</task>',
         '</agentic_task_input>',
-      ].join('\n\n')
+      ].filter(Boolean).join('\n\n')
       const requestId = uid()
       activeAgenticRequestId.current = requestId
 
@@ -439,6 +440,31 @@ export function useAgenticMode({
           return {
             success: true,
             content: `Wrote and reviewed ${filePath}`,
+          }
+        },
+      })
+
+      registry.register({
+        name: 'run_command',
+        description: 'Execute a shell command and return its output',
+        execute: async (input) => {
+          const command = typeof input.command === 'string' ? input.command : ''
+          const cwd = typeof input.cwd === 'string' ? input.cwd : (rootPath ?? undefined)
+
+          if (!command) return { success: false, content: 'run_command: missing command' }
+
+          const result = await window.api.runCommand(command, cwd)
+
+          const termPart: TerminalOutputPart = {
+            type: 'terminal_output',
+            terminalOutput: { command, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode },
+          }
+          appendMessagePart(haikuMsgId, termPart)
+
+          const output = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+          return {
+            success: result.exitCode === 0,
+            content: output || `Exit code: ${result.exitCode}`,
           }
         },
       })
