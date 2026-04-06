@@ -37,6 +37,44 @@ function pairToolParts(parts: MessagePart[]): ProcessedPart[] {
   return out
 }
 
+interface ModelOption {
+  id: string
+  label: string
+}
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'claude-opus-4-6', label: 'Opus 4.6' },
+]
+
+function ModelPicker({
+  value,
+  onChange,
+  accentClass,
+}: {
+  value: string
+  onChange: (id: string) => void
+  accentClass: string
+}) {
+  const label = MODEL_OPTIONS.find((m) => m.id === value)?.label ?? value
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`text-[9px] uppercase tracking-wider bg-transparent border-none outline-none cursor-pointer ${accentClass} appearance-none`}
+      title="Change model"
+    >
+      {MODEL_OPTIONS.map((m) => (
+        <option key={m.id} value={m.id} className="bg-surface-1 text-primary normal-case tracking-normal">
+          {m.label}
+        </option>
+      ))}
+    </select>
+  )
+  void label // suppress unused warning — label is used implicitly via select value display
+}
+
 interface Props {
   messages: Message[]
   reviews: ReviewEntry[]
@@ -54,6 +92,10 @@ interface Props {
   breakingIssue: BreakingIssue | null
   onDismissBreaking: () => void
   theme: ResolvedTheme
+  haikuModel: string
+  sonnetModel: string
+  onHaikuModelChange: (id: string) => void
+  onSonnetModelChange: (id: string) => void
 }
 
 function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
@@ -289,6 +331,10 @@ export default function LLMPanel({
   breakingIssue,
   onDismissBreaking,
   theme,
+  haikuModel,
+  sonnetModel,
+  onHaikuModelChange,
+  onSonnetModelChange,
 }: Props) {
   const [input, setInput] = useState('')
   const [showReviews, setShowReviews] = useState(false)
@@ -428,16 +474,29 @@ export default function LLMPanel({
         </div>
       </div>
 
+      {/* Model pickers */}
+      <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border/70 bg-surface-0/40">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-subtle">Planner</span>
+          <ModelPicker value={haikuModel} onChange={onHaikuModelChange} accentClass="text-accent-gemini" />
+        </div>
+        <span className="text-subtle text-[9px]">·</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-subtle">Reviewer</span>
+          <ModelPicker value={sonnetModel} onChange={onSonnetModelChange} accentClass="text-accent-claude" />
+        </div>
+      </div>
+
       {agenticMode && (
         <div className="px-3 py-2 border-b border-border/70 text-[10px] text-secondary leading-relaxed">
           <span className="uppercase tracking-wider text-subtle mr-2">Workflow</span>
-          <span className="text-accent-gemini">Haiku Planner</span>
+          <span className="text-accent-gemini">Planner</span>
           <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-claude">Sonnet Reviewer</span>
+          <span className="text-accent-claude">Reviewer</span>
           <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-gemini">Haiku Implementer</span>
+          <span className="text-accent-gemini">Implementer</span>
           <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-claude">Sonnet Final Reviewer</span>
+          <span className="text-accent-claude">Final Review</span>
         </div>
       )}
 

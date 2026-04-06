@@ -87,6 +87,8 @@ export default function App() {
     haikuStreaming, setHaikuStreaming,
     sonnetStreaming, setSonnetStreaming,
     estimatedTokens,
+    haikuModel, setHaikuModel,
+    sonnetModel, setSonnetModel,
   } = useChatStore()
   const { leftWidth, rightWidth, leftCollapsed, rightCollapsed, toggleCollapse, startResize } = useResizablePanels(layoutRef)
   const { sessions, activeSessionId, activeSession, saveSession, newSession, switchSession, deleteSession } = useSessionStorage()
@@ -338,7 +340,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToHaiku(history, requestId, rootPath)
+      window.api.sendToHaiku(history, requestId, rootPath, haikuModel)
         .then((fullText) => {
           setHaikuStreaming(false)
           activeRequestId.current = null
@@ -376,7 +378,7 @@ export default function App() {
         ))
       })
 
-      window.api.sendToSonnet(history, requestId, rootPath)
+      window.api.sendToSonnet(history, requestId, rootPath, sonnetModel)
         .then((fullText) => {
           setSonnetStreaming(false)
           activeRequestId.current = null
@@ -606,6 +608,10 @@ export default function App() {
               breakingIssue={breakingIssue}
               onDismissBreaking={dismissInterrupt}
               theme={resolvedTheme}
+              haikuModel={haikuModel}
+              sonnetModel={sonnetModel}
+              onHaikuModelChange={setHaikuModel}
+              onSonnetModelChange={setSonnetModel}
             />
           </ErrorBoundary>
         </aside>

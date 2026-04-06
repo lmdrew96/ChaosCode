@@ -103,7 +103,7 @@ export function useAgenticMode({
   openFile,
   onFileWritten,
 }: Options) {
-  const { setMessages, setReviews } = useChatStore()
+  const { setMessages, setReviews, haikuModel, sonnetModel } = useChatStore()
   const [agenticState, setAgenticState] = useState<AgenticState>({
     phase: 'idle',
     currentFilePath: null,
@@ -278,7 +278,7 @@ export function useAgenticMode({
     ))
 
     try {
-      const reviewText = await window.api.sonnetAgenticReview({ filePath, content, userTask })
+      const reviewText = await window.api.sonnetAgenticReview({ filePath, content, userTask, model: sonnetModel })
       let result = parseReview(reviewText)
 
       // Sonnet should fix, not only critique. If it reports issues without a patch,
@@ -564,7 +564,7 @@ export function useAgenticMode({
 
       // Kick off Haiku agentic call (uses structured output system prompt + file context)
       try {
-        await window.api.sendToHaikuAgentic(fullTask, requestId)
+        await window.api.sendToHaikuAgentic(fullTask, requestId, haikuModel)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setMessages((prev) =>
@@ -594,7 +594,7 @@ export function useAgenticMode({
         setAgenticState((s) => ({ ...s, phase: 'done', currentFilePath: null }))
       }
     },
-    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten] // eslint-disable-line react-hooks/exhaustive-deps
+    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten, haikuModel, sonnetModel] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   return {

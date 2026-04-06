@@ -12,11 +12,18 @@ import {
   sonnetAgenticReviewSystemPrompt,
   sonnetSystemPrompt,
 } from './prompts'
+import { providerRegistry } from './providers/registry'
 
 dotenv.config()
 
 const HAIKU_MODEL = 'claude-haiku-4-5'
 const SONNET_MODEL = 'claude-sonnet-4-6'
+
+/** Validate a caller-supplied model ID, falling back to the default if invalid. */
+function resolveModel(requested: string | undefined, fallback: string): string {
+  if (!requested) return fallback
+  return providerRegistry.isValid(requested) ? requested : fallback
+}
 
 function createAnthropicClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -143,6 +150,10 @@ ipcMain.handle('fs:openFolder', async () => {
   return result.filePaths[0]
 })
 
+// ─── Provider/model discovery ─────────────────────────────────────────────────
+
+ipcMain.handle('llm:models', () => providerRegistry.allModels())
+
 // ─── Cancellation (Continue-style AbortController, adapted for IPC) ───────────
 // Each LLM call accepts a requestId. The renderer sends 'llm:cancel' to abort.
 const cancelledRequests = new Set<string>()
@@ -170,10 +181,10 @@ ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string)
   writeFileSync(filePath, content, 'utf-8')
 })
 
-ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: string) => {
+ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: string, model?: string) => {
   const anthropic = createAnthropicClient()
   const stream = anthropic.messages.stream({
-    model: HAIKU_MODEL,
+    model: resolveModel(model, HAIKU_MODEL),
     max_tokens: 4096,
     system: haikuAgenticSystemPrompt,
     messages: [{ role: 'user', content: userTask }]
@@ -195,11 +206,11 @@ ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: s
 
 ipcMain.handle('llm:sonnet:agentic-review', async (
   _event,
-  { filePath, content, userTask }: { filePath: string; content: string; userTask: string }
+  { filePath, content, userTask, model }: { filePath: string; content: string; userTask: string; model?: string }
 ) => {
   const anthropic = createAnthropicClient()
   const response = await anthropic.messages.create({
-    model: SONNET_MODEL,
+    model: resolveModel(model, SONNET_MODEL),
     max_tokens: 4096,
     system: sonnetAgenticReviewSystemPrompt,
     messages: [{
@@ -255,7 +266,8 @@ ipcMain.handle('llm:haiku', async (
   event,
   messages: Array<{ role: string; content: string }>,
   requestId: string,
-  rootPath?: string | null
+  rootPath?: string | null,
+  model?: string
 ) => {
   const anthropic = createAnthropicClient()
   const tools = rootPath ? [READ_FILE_TOOL] : undefined
@@ -265,7 +277,7 @@ ipcMain.handle('llm:haiku', async (
   // Tool loop: keep sending until the model stops requesting tool calls
   for (;;) {
     const stream = anthropic.messages.stream({
-      model: HAIKU_MODEL,
+      model: resolveModel(model, HAIKU_MODEL),
       max_tokens: 2048,
       system: haikuSystemPrompt,
       messages: currentMessages,
@@ -307,7 +319,8 @@ ipcMain.handle('llm:sonnet', async (
   event,
   messages: Array<{ role: string; content: string }>,
   requestId: string,
-  rootPath?: string | null
+  rootPath?: string | null,
+  model?: string
 ) => {
   const anthropic = createAnthropicClient()
   const tools = rootPath ? [READ_FILE_TOOL] : undefined
@@ -316,7 +329,7 @@ ipcMain.handle('llm:sonnet', async (
 
   for (;;) {
     const stream = anthropic.messages.stream({
-      model: SONNET_MODEL,
+      model: resolveModel(model, SONNET_MODEL),
       max_tokens: 4096,
       system: sonnetSystemPrompt,
       messages: currentMessages,

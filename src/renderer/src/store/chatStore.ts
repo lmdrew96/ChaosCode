@@ -20,6 +20,9 @@ interface ChatStore {
   sonnetStreaming: boolean
   /** Estimated token count across all messages in the current session */
   estimatedTokens: number
+  /** Active model IDs for each role — overridable by the user */
+  haikuModel: string
+  sonnetModel: string
 
   // Dispatch-compatible setters (accept value or functional updater — mirrors React.SetStateAction)
   setMessages: (value: Message[] | ((prev: Message[]) => Message[])) => void
@@ -28,6 +31,8 @@ interface ChatStore {
   setAgenticMode: (v: boolean) => void
   setHaikuStreaming: (v: boolean) => void
   setSonnetStreaming: (v: boolean) => void
+  setHaikuModel: (id: string) => void
+  setSonnetModel: (id: string) => void
 }
 
 const useChatStore = create<ChatStore>((set) => ({
@@ -38,6 +43,8 @@ const useChatStore = create<ChatStore>((set) => ({
   haikuStreaming: false,
   sonnetStreaming: false,
   estimatedTokens: 0,
+  haikuModel: 'claude-haiku-4-5',
+  sonnetModel: 'claude-sonnet-4-6',
 
   setMessages: (value) =>
     set((state) => {
@@ -54,6 +61,8 @@ const useChatStore = create<ChatStore>((set) => ({
   setAgenticMode: (agenticMode) => set({ agenticMode }),
   setHaikuStreaming: (haikuStreaming) => set({ haikuStreaming }),
   setSonnetStreaming: (sonnetStreaming) => set({ sonnetStreaming }),
+  setHaikuModel: (haikuModel) => set({ haikuModel }),
+  setSonnetModel: (sonnetModel) => set({ sonnetModel }),
 }))
 
 export default useChatStore

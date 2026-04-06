@@ -17,16 +17,23 @@ export type Api = {
   // Cancellation
   cancelRequest: (requestId: string) => Promise<void>
 
+  // Provider/model discovery
+  getModels: () => Promise<Array<{
+    id: string; label: string; providerId: string; providerName: string
+    contextWindow: number; costInputPer1M: number; costOutputPer1M: number
+  }>>
+
   // Chat LLMs
-  sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
-  sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
+  sendToHaiku: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string) => Promise<string>
+  sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string) => Promise<string>
 
   // Agentic LLMs
-  sendToHaikuAgentic: (userTask: string, requestId: string) => Promise<string>
+  sendToHaikuAgentic: (userTask: string, requestId: string, model?: string) => Promise<string>
   sonnetAgenticReview: (args: {
     filePath: string
     content: string
     userTask: string
+    model?: string
   }) => Promise<string>
 
   // Streaming listeners
@@ -58,10 +65,12 @@ const api: Api = {
 
   cancelRequest: (requestId) => ipcRenderer.invoke('llm:cancel', requestId),
 
-  sendToHaiku: (messages, requestId, rootPath) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath),
-  sendToSonnet: (messages, requestId, rootPath) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath),
+  getModels: () => ipcRenderer.invoke('llm:models'),
 
-  sendToHaikuAgentic: (userTask, requestId) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId),
+  sendToHaiku: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath, model),
+  sendToSonnet: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath, model),
+
+  sendToHaikuAgentic: (userTask, requestId, model) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId, model),
   sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),
 
   onHaikuToken: (cb) => { ipcRenderer.on('llm:haiku:token', (_e, token) => cb(token)) },
