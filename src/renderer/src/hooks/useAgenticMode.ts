@@ -33,9 +33,21 @@ function countLineDiff(before: string, after: string): FileDiffSummary {
   const afterLines = toLines(after)
   const shared = lcsLength(beforeLines, afterLines)
 
+  // Greedy LCS walk to find which 1-based line numbers in `after` are new/changed
+  const addedLines: number[] = []
+  let bi = 0
+  for (let ai = 0; ai < afterLines.length; ai++) {
+    if (bi < beforeLines.length && afterLines[ai] === beforeLines[bi]) {
+      bi++
+    } else {
+      addedLines.push(ai + 1)
+    }
+  }
+
   return {
     added: afterLines.length - shared,
     removed: beforeLines.length - shared,
+    addedLines,
   }
 }
 

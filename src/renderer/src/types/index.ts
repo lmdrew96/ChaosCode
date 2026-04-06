@@ -95,6 +95,8 @@ export interface ReviewEntry {
 export interface FileDiffSummary {
   added: number
   removed: number
+  /** 1-based line numbers that were added or changed (computed via greedy LCS) */
+  addedLines: number[]
 }
 
 export interface FileNode {

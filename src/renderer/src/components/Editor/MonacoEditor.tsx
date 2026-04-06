@@ -1,13 +1,27 @@
 import Editor, { useMonaco } from '@monaco-editor/react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import * as Monaco from 'monaco-editor'
 import type { OpenFile } from '@/types'
 import type { ResolvedTheme } from '@/hooks/useTheme'
+
+// Inject diff decoration styles once at module load
+const DIFF_STYLE_ID = 'chaoscode-diff-decorations'
+if (typeof document !== 'undefined' && !document.getElementById(DIFF_STYLE_ID)) {
+  const s = document.createElement('style')
+  s.id = DIFF_STYLE_ID
+  s.textContent = [
+    '.cc-diff-added { background: rgba(34,197,94,0.07) !important; }',
+    '.cc-diff-added-gutter { background: #22c55e; width: 3px !important; margin-left: 2px; border-radius: 1px; }',
+  ].join('\n')
+  document.head.appendChild(s)
+}
 
 interface Props {
   file: OpenFile | null
   onChange: (content: string) => void
   theme: ResolvedTheme
+  /** 1-based line numbers changed by the last agentic write, for gutter highlighting */
+  addedLines?: number[]
 }
 
 const MONACO_THEMES: Record<ResolvedTheme, Monaco.editor.IStandaloneThemeData> = {
@@ -92,8 +106,10 @@ function handleBeforeMount(monaco: typeof Monaco) {
   monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
 }
 
-export default function MonacoEditorPanel({ file, onChange, theme }: Props) {
+export default function MonacoEditorPanel({ file, onChange, theme, addedLines }: Props) {
   const monaco = useMonaco()
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const decorationIds = useRef<string[]>([])
 
   useEffect(() => {
     if (!monaco) return
@@ -101,6 +117,29 @@ export default function MonacoEditorPanel({ file, onChange, theme }: Props) {
     monaco.editor.defineTheme('chaos-light', MONACO_THEMES.light)
     monaco.editor.setTheme(theme === 'dark' ? 'chaos-dark' : 'chaos-light')
   }, [monaco, theme])
+
+  // Apply / clear diff decorations when addedLines or file changes
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !monaco) return
+
+    decorationIds.current = editor.deltaDecorations(decorationIds.current, [])
+
+    if (!addedLines?.length) return
+
+    const decorations: Monaco.editor.IModelDeltaDecoration[] = addedLines.map((line) => ({
+      range: new monaco.Range(line, 1, line, 1),
+      options: {
+        isWholeLine: true,
+        className: 'cc-diff-added',
+        linesDecorationsClassName: 'cc-diff-added-gutter',
+        overviewRuler: { color: '#22c55e80', position: monaco.editor.OverviewRulerLane.Left },
+        minimap: { color: '#22c55e80', position: monaco.editor.MinimapPosition.Inline },
+      },
+    }))
+
+    decorationIds.current = editor.deltaDecorations([], decorations)
+  }, [addedLines, monaco, file?.path])
 
   if (!file) {
     return (
@@ -119,6 +158,7 @@ export default function MonacoEditorPanel({ file, onChange, theme }: Props) {
       value={file.content}
       theme={theme === 'dark' ? 'chaos-dark' : 'chaos-light'}
       beforeMount={handleBeforeMount}
+      onMount={(editor) => { editorRef.current = editor }}
       onChange={(val) => onChange(val ?? '')}
       options={{
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",

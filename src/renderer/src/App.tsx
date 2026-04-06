@@ -555,6 +555,7 @@ export default function App() {
             file={openFile}
             onChange={handleEditorChange}
             theme={resolvedTheme}
+            addedLines={openFile ? agenticState.fileDiffs[openFile.path]?.addedLines : undefined}
           />
         </main>
 
