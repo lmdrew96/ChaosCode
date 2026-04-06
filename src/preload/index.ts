@@ -28,6 +28,8 @@ export type Api = {
   sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null, model?: string) => Promise<string>
 
   // Agentic LLMs
+  sendToHaikuPlan: (userTask: string, requestId: string, model?: string) => Promise<string>
+  sonnetPlanReview: (args: { userTask: string; planText: string; model?: string }) => Promise<string>
   sendToHaikuAgentic: (userTask: string, requestId: string, model?: string) => Promise<string>
   sonnetAgenticReview: (args: {
     filePath: string
@@ -39,6 +41,8 @@ export type Api = {
   // Streaming listeners
   onHaikuToken: (cb: (token: string) => void) => void
   onHaikuDone: (cb: () => void) => void
+  onHaikuPlanToken: (requestId: string, cb: (token: string) => void) => () => void
+  onHaikuPlanDone: (requestId: string, cb: () => void) => () => void
   onHaikuAgenticToken: (requestId: string, cb: (token: string) => void) => () => void
   onHaikuAgenticDone: (requestId: string, cb: () => void) => () => void
   onSonnetToken: (cb: (token: string) => void) => void
@@ -70,11 +74,25 @@ const api: Api = {
   sendToHaiku: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:haiku', messages, requestId, rootPath, model),
   sendToSonnet: (messages, requestId, rootPath, model) => ipcRenderer.invoke('llm:sonnet', messages, requestId, rootPath, model),
 
+  sendToHaikuPlan: (userTask, requestId, model) => ipcRenderer.invoke('llm:haiku:plan', userTask, requestId, model),
+  sonnetPlanReview: (args) => ipcRenderer.invoke('llm:sonnet:plan-review', args),
   sendToHaikuAgentic: (userTask, requestId, model) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId, model),
   sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),
 
   onHaikuToken: (cb) => { ipcRenderer.on('llm:haiku:token', (_e, token) => cb(token)) },
   onHaikuDone: (cb) => { ipcRenderer.on('llm:haiku:done', () => cb()) },
+  onHaikuPlanToken: (requestId, cb) => {
+    const channel = `llm:haiku:plan:token:${requestId}`
+    const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
+  onHaikuPlanDone: (requestId, cb) => {
+    const channel = `llm:haiku:plan:done:${requestId}`
+    const listener = () => cb()
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  },
   onHaikuAgenticToken: (requestId, cb) => {
     const channel = `llm:haiku:agentic:token:${requestId}`
     const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)

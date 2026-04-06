@@ -7,9 +7,12 @@ import Anthropic from '@anthropic-ai/sdk'
 import * as pty from 'node-pty'
 import {
   buildAgenticReviewUserMessage,
+  buildPlanReviewUserMessage,
   haikuAgenticSystemPrompt,
+  haikuPlanningSystemPrompt,
   haikuSystemPrompt,
   sonnetAgenticReviewSystemPrompt,
+  sonnetPlanReviewSystemPrompt,
   sonnetSystemPrompt,
 } from './prompts'
 import { providerRegistry } from './providers/registry'
@@ -202,6 +205,46 @@ ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
 ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string) => {
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, content, 'utf-8')
+})
+
+ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: string, model?: string) => {
+  const anthropic = createAnthropicClient()
+  const stream = anthropic.messages.stream({
+    model: resolveModel(model, HAIKU_MODEL),
+    max_tokens: 2048,
+    system: haikuPlanningSystemPrompt,
+    messages: [{ role: 'user', content: userTask }]
+  })
+
+  let fullText = ''
+  const tokenChannel = `llm:haiku:plan:token:${requestId}`
+  const doneChannel = `llm:haiku:plan:done:${requestId}`
+  for await (const chunk of stream) {
+    if (isCancelled(requestId)) { clearCancel(requestId); stream.abort(); break }
+    if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
+    const token = chunk.delta.text
+    fullText += token
+    event.sender.send(tokenChannel, token)
+  }
+  event.sender.send(doneChannel)
+  return fullText
+})
+
+ipcMain.handle('llm:sonnet:plan-review', async (
+  _event,
+  { userTask, planText, model }: { userTask: string; planText: string; model?: string }
+) => {
+  const anthropic = createAnthropicClient()
+  const response = await anthropic.messages.create({
+    model: resolveModel(model, SONNET_MODEL),
+    max_tokens: 2048,
+    system: sonnetPlanReviewSystemPrompt,
+    messages: [{
+      role: 'user',
+      content: buildPlanReviewUserMessage({ userTask, planText }),
+    }]
+  })
+  return response.content[0].type === 'text' ? response.content[0].text : ''
 })
 
 ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: string, model?: string) => {

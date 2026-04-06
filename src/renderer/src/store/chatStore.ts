@@ -16,6 +16,7 @@ interface ChatStore {
   reviews: ReviewEntry[]
   target: LLMTarget
   agenticMode: boolean
+  autoApprove: boolean
   haikuStreaming: boolean
   sonnetStreaming: boolean
   /** Estimated token count across all messages in the current session */
@@ -29,6 +30,7 @@ interface ChatStore {
   setReviews: (value: ReviewEntry[] | ((prev: ReviewEntry[]) => ReviewEntry[])) => void
   setTarget: (t: LLMTarget) => void
   setAgenticMode: (v: boolean) => void
+  setAutoApprove: (v: boolean) => void
   setHaikuStreaming: (v: boolean) => void
   setSonnetStreaming: (v: boolean) => void
   setHaikuModel: (id: string) => void
@@ -40,6 +42,7 @@ const useChatStore = create<ChatStore>((set) => ({
   reviews: [],
   target: 'both',
   agenticMode: false,
+  autoApprove: false,
   haikuStreaming: false,
   sonnetStreaming: false,
   estimatedTokens: 0,
@@ -59,6 +62,7 @@ const useChatStore = create<ChatStore>((set) => ({
 
   setTarget: (target) => set({ target }),
   setAgenticMode: (agenticMode) => set({ agenticMode }),
+  setAutoApprove: (autoApprove) => set({ autoApprove }),
   setHaikuStreaming: (haikuStreaming) => set({ haikuStreaming }),
   setSonnetStreaming: (sonnetStreaming) => set({ sonnetStreaming }),
   setHaikuModel: (haikuModel) => set({ haikuModel }),

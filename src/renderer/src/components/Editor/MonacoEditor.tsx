@@ -4,9 +4,9 @@ import * as Monaco from 'monaco-editor'
 import type { OpenFile } from '@/types'
 import type { ColorScheme, ResolvedTheme } from '@/hooks/useTheme'
 
-// Suppress Monaco tsWorker race: getSyntacticDiagnostics fires on the transient
-// inmemory://model/1 URI before noSyntacticValidation propagates. There is no
-// public API to prevent this — suppressing the unhandled rejection is the only fix.
+// Monaco defaults to a transient in-memory model URI unless we provide a stable
+// path. Using the file path keeps the TypeScript worker from racing on
+// `inmemory://model/1`; the unhandledrejection guard remains as a fallback.
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
     if (e.reason?.message?.includes('inmemory://model/1')) {
@@ -211,19 +211,19 @@ function handleBeforeMount(monaco: typeof Monaco) {
     noSyntacticValidation: true,
     noSuggestionDiagnostics: true,
   }
-  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation)
-  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation)
+  monaco.typescript.typescriptDefaults.setDiagnosticsOptions(noValidation)
+  monaco.typescript.javascriptDefaults.setDiagnosticsOptions(noValidation)
 
   // Enable JSX so TSX/JSX files parse without every '<' being a syntax error.
   const compilerOptions = {
-    jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+    jsx: monaco.typescript.JsxEmit.ReactJSX,
     allowSyntheticDefaultImports: true,
     esModuleInterop: true,
     allowJs: true,
-    target: monaco.languages.typescript.ScriptTarget.ESNext,
+    target: monaco.typescript.ScriptTarget.ESNext,
   }
-  monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
-  monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
+  monaco.typescript.typescriptDefaults.setCompilerOptions(compilerOptions)
+  monaco.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
 }
 
 export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, addedLines }: Props) {
@@ -274,6 +274,7 @@ export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, 
   return (
     <Editor
       height="100%"
+      path={file.path}
       language={file.language}
       value={file.content}
       theme={theme === 'dark' ? 'chaos-dark' : 'chaos-light'}

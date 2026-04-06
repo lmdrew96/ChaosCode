@@ -130,6 +130,32 @@ export function parseStreamToolCalls(text: string): {
 }
 
 /**
+ * Parses a structured <plan> block from Haiku's planning output.
+ * Returns null if no valid plan block is found.
+ */
+export function parsePlan(text: string): { summary: string; files: Array<{ path: string; action: 'create' | 'modify' | 'delete'; description: string }> } | null {
+  const planMatch = text.match(/<plan>([\s\S]*?)<\/plan>/i)
+  if (!planMatch) return null
+
+  const inner = planMatch[1]
+  const summaryMatch = inner.match(/<summary>([\s\S]*?)<\/summary>/i)
+  const summary = summaryMatch?.[1]?.trim() ?? ''
+
+  const files: Array<{ path: string; action: 'create' | 'modify' | 'delete'; description: string }> = []
+  const filePattern = /<file\s+path\s*=\s*["']([^"']+)["']\s+action\s*=\s*["'](create|modify|delete)["']\s*>([\s\S]*?)<\/file>/gi
+  let fileMatch: RegExpExecArray | null
+  while ((fileMatch = filePattern.exec(inner)) !== null) {
+    files.push({
+      path: fileMatch[1],
+      action: fileMatch[2].toLowerCase() as 'create' | 'modify' | 'delete',
+      description: fileMatch[3].trim(),
+    })
+  }
+
+  return { summary, files }
+}
+
+/**
  * Parses Sonnet's structured agentic review output.
  */
 export function parseReview(text: string): ReviewResult {

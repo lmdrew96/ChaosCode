@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
-import { parseReview, parseStreamToolCalls } from '@/services/agenticParser'
+import { parsePlan, parseReview, parseStreamToolCalls } from '@/services/agenticParser'
 import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
 import { ToolRegistry } from '@/services/toolRegistry'
-import type { FileDiffSummary, FileNode, MessagePart, OpenFile, TerminalOutputPart } from '@/types'
+import type { AgenticPlan, FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
 import useChatStore from '@/store/chatStore'
 
 function toLines(text: string): string[] {
@@ -71,6 +71,8 @@ function uid() {
 export type AgenticPhase =
   | 'idle'
   | 'planning'
+  | 'plan-review'
+  | 'awaiting-approval'
   | 'implementing'
   | 'reviewing'
   | 'done'
@@ -83,6 +85,7 @@ export interface AgenticState {
   filesReviewed: number
   reviewingFiles: string[]
   fileDiffs: Record<string, FileDiffSummary>
+  plan: AgenticPlan | null
 }
 
 export interface BreakingIssue {
@@ -103,7 +106,7 @@ export function useAgenticMode({
   openFile,
   onFileWritten,
 }: Options) {
-  const { setMessages, setReviews, haikuModel, sonnetModel } = useChatStore()
+  const { setMessages, setReviews, haikuModel, sonnetModel, autoApprove } = useChatStore()
   const [agenticState, setAgenticState] = useState<AgenticState>({
     phase: 'idle',
     currentFilePath: null,
@@ -111,6 +114,7 @@ export function useAgenticMode({
     filesReviewed: 0,
     reviewingFiles: [],
     fileDiffs: {},
+    plan: null,
   })
   const [breakingIssue, setBreakingIssue] = useState<BreakingIssue | null>(null)
 
@@ -125,6 +129,8 @@ export function useAgenticMode({
   const fileOperationQueues = useRef<Record<string, Promise<void>>>({})
   // Avoid processing the same streamed file block multiple times (incremental + post-scan)
   const lastQueuedContentByFile = useRef<Record<string, string>>({})
+  // Resolve function set when phase === 'awaiting-approval'; calling it proceeds to implementation
+  const approvalResolveRef = useRef<(() => void) | null>(null)
 
   function queueFileOperation(filePath: string, op: () => Promise<void>): Promise<void> {
     const prev = fileOperationQueues.current[filePath] ?? Promise.resolve()
@@ -247,6 +253,11 @@ export function useAgenticMode({
 
   const cancelAgenticTask = useCallback(async () => {
     interruptRef.current = true
+    // Unblock the approval await so runAgenticTask can see interruptRef and exit
+    const resolveApproval = approvalResolveRef.current
+    approvalResolveRef.current = null
+    resolveApproval?.()
+
     const requestId = activeAgenticRequestId.current
     if (requestId) {
       try {
@@ -260,6 +271,11 @@ export function useAgenticMode({
       if (s.phase === 'idle' || s.phase === 'done' || s.phase === 'interrupted') return s
       return { ...s, phase: 'interrupted', currentFilePath: null }
     })
+  }, [])
+
+  const approvePlan = useCallback(() => {
+    approvalResolveRef.current?.()
+    approvalResolveRef.current = null
   }, [])
 
   /**
@@ -285,7 +301,7 @@ export function useAgenticMode({
       // request one strict retry that must include full corrected file content.
       if (result.severity !== 'none' && !result.fixedContent) {
         const retryTask = `${userTask}\n\nIMPORTANT: You previously found ${result.severity} issues in ${filePath} but did not provide a fix. Return a complete corrected file in <fixed>.`
-        const retryText = await window.api.sonnetAgenticReview({ filePath, content, userTask: retryTask })
+        const retryText = await window.api.sonnetAgenticReview({ filePath, content, userTask: retryTask, model: sonnetModel })
         const retryResult = parseReview(retryText)
 
         result = {
@@ -317,6 +333,7 @@ export function useAgenticMode({
         // If Sonnet provided a fix for the breaking issue, write it
         if (result.fixedContent) {
           await persistFile(filePath, result.fixedContent)
+          onFileWritten(filePath)
         }
         return
       }
@@ -340,7 +357,8 @@ export function useAgenticMode({
   }
 
   /**
-    * Main agentic entry point. Streams Haiku, parses tool calls, executes tools in parallel.
+   * Main agentic entry point.
+   * Stages: planning → plan-review → (awaiting-approval) → implementing → reviewing
    */
   const runAgenticTask = useCallback(
     async (userTask: string, chatCarryover = '') => {
@@ -359,6 +377,7 @@ export function useAgenticMode({
       }
 
       interruptRef.current = false
+      approvalResolveRef.current = null
       reviewPromises.current = []
       setBreakingIssue(null)
       lastQueuedContentByFile.current = {}
@@ -369,6 +388,7 @@ export function useAgenticMode({
         filesReviewed: 0,
         reviewingFiles: [],
         fileDiffs: {},
+        plan: null,
       })
       originalContents.current = {}
 
@@ -381,7 +401,7 @@ export function useAgenticMode({
       }
       setMessages((prev) => [...prev, userMsg])
 
-      // Build project context so Haiku knows what already exists
+      // Build project context (shared by planning + implementation calls)
       const treeText = fileTree.length > 0
         ? buildFileTreeText(fileTree)
         : 'No files in project yet.'
@@ -398,7 +418,7 @@ export function useAgenticMode({
           ].join('\n')
         : '<active_file />'
 
-      const fullTask = [
+      const contextBlock = [
         '<agentic_task_input>',
         chatCarryover ? `<chat_carryover>\n${chatCarryover}\n</chat_carryover>` : '',
         '<project_tree>',
@@ -410,6 +430,104 @@ export function useAgenticMode({
         '</task>',
         '</agentic_task_input>',
       ].filter(Boolean).join('\n\n')
+
+      // ── Stage 1: Haiku planning ──────────────────────────────────────────────
+
+      const planRequestId = uid()
+      activeAgenticRequestId.current = planRequestId
+
+      const haikuPlanMsgId = uid()
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: haikuPlanMsgId,
+          role: 'assistant',
+          source: 'haiku',
+          content: [{ type: 'text', text: '' }],
+          timestamp: Date.now(),
+        },
+      ])
+
+      let planText = ''
+      const unsubscribePlanToken = window.api.onHaikuPlanToken(planRequestId, (token) => {
+        planText += token
+        appendTextToMessage(haikuPlanMsgId, token)
+      })
+      const unsubscribePlanDone = window.api.onHaikuPlanDone(planRequestId, () => {})
+
+      try {
+        await window.api.sendToHaikuPlan(contextBlock, planRequestId, haikuModel)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setMessages((prev) =>
+          prev.map((m) => m.id === haikuPlanMsgId ? { ...m, content: `[Error: ${message}]` } : m)
+        )
+        setAgenticState((s) => ({ ...s, phase: 'interrupted' }))
+        return
+      } finally {
+        unsubscribePlanToken()
+        unsubscribePlanDone()
+        activeAgenticRequestId.current = null
+      }
+
+      if (interruptRef.current) return
+
+      // ── Stage 2: Sonnet plan review ──────────────────────────────────────────
+
+      setAgenticState((s) => ({ ...s, phase: 'plan-review' }))
+
+      let reviewedPlanText = planText
+      try {
+        const sonnetReviewedPlan = await window.api.sonnetPlanReview({
+          userTask,
+          planText,
+          model: sonnetModel,
+        })
+        if (sonnetReviewedPlan.trim()) reviewedPlanText = sonnetReviewedPlan
+      } catch (err) {
+        console.error('Plan review error:', err)
+        // Non-fatal: proceed with Haiku's original plan
+      }
+
+      if (interruptRef.current) return
+
+      const parsedPlan = parsePlan(reviewedPlanText)
+
+      // Show Sonnet's reviewed plan as a message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: 'assistant',
+          source: 'sonnet',
+          content: reviewedPlanText,
+          timestamp: Date.now(),
+        },
+      ])
+
+      setAgenticState((s) => ({
+        ...s,
+        plan: parsedPlan ?? s.plan,
+        phase: autoApprove ? 'implementing' : 'awaiting-approval',
+      }))
+
+      // ── Stage 3: User approval (skipped when autoApprove is on) ─────────────
+
+      if (!autoApprove) {
+        await new Promise<void>((resolve) => {
+          approvalResolveRef.current = resolve
+        })
+        if (interruptRef.current) return
+        setAgenticState((s) => ({ ...s, phase: 'implementing' }))
+      }
+
+      // ── Stage 4: Haiku implementation ────────────────────────────────────────
+
+      const fullTask = [
+        contextBlock,
+        `<approved_plan>\n${reviewedPlanText}\n</approved_plan>`,
+      ].join('\n\n')
+
       const requestId = uid()
       activeAgenticRequestId.current = requestId
 
@@ -425,7 +543,6 @@ export function useAgenticMode({
           timestamp: Date.now(),
         },
       ])
-      setAgenticState((s) => ({ ...s, phase: 'implementing' }))
 
       const registry = new ToolRegistry()
       registry.register({
@@ -594,7 +711,7 @@ export function useAgenticMode({
         setAgenticState((s) => ({ ...s, phase: 'done', currentFilePath: null }))
       }
     },
-    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten, haikuModel, sonnetModel] // eslint-disable-line react-hooks/exhaustive-deps
+    [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten, haikuModel, sonnetModel, autoApprove] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   return {
@@ -602,6 +719,7 @@ export function useAgenticMode({
     breakingIssue,
     dismissInterrupt,
     cancelAgenticTask,
+    approvePlan,
     runAgenticTask,
   }
 }

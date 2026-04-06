@@ -89,18 +89,20 @@ export function buildLLMMessage(userText: string, contextItems: ContextItem[]): 
   ].filter(Boolean).join('\n')
 }
 
-export function buildSonnetReviewMessage(userText: string, haikuReply: string): string {
+export function buildSonnetReviewMessage(userText: string, haikuReply: string, contextItems: ContextItem[] = []): string {
+  const ctx = serializeContextItems(contextItems)
   return [
     '<chat_input>',
     '<user_request>',
     userText,
     '</user_request>',
+    ctx ? `<context_bundle>\n${ctx}\n</context_bundle>` : '',
     '</chat_input>',
     '<haiku_draft>',
     haikuReply,
     '</haiku_draft>',
     '<instruction>Review the draft, fix issues directly, and return the final answer.</instruction>',
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 }
 
 export function buildAgenticCarryover(

@@ -88,9 +88,12 @@ interface Props {
   sonnetStreaming: boolean
   agenticMode: boolean
   onAgenticModeChange: (v: boolean) => void
+  autoApprove: boolean
+  onAutoApproveChange: (v: boolean) => void
   agenticState: AgenticState
   breakingIssue: BreakingIssue | null
   onDismissBreaking: () => void
+  onApprovePlan: () => void
   theme: ResolvedTheme
   colorScheme: ColorScheme
   haikuModel: string
@@ -313,8 +316,8 @@ function MessageBubble({ msg, theme }: { msg: Message; theme: ResolvedTheme }) {
 
 const TARGETS: { value: LLMTarget; label: string }[] = [
   { value: 'both', label: 'Both' },
-  { value: 'haiku', label: 'Haiku Planner' },
-  { value: 'sonnet', label: 'Sonnet Reviewer' },
+  { value: 'haiku', label: 'Haiku' },
+  { value: 'sonnet', label: 'Sonnet' },
 ]
 
 export default function LLMPanel({
@@ -330,9 +333,12 @@ export default function LLMPanel({
   sonnetStreaming,
   agenticMode,
   onAgenticModeChange,
+  autoApprove,
+  onAutoApproveChange,
   agenticState,
   breakingIssue,
   onDismissBreaking,
+  onApprovePlan,
   theme,
   colorScheme,
   haikuModel,
@@ -350,7 +356,7 @@ export default function LLMPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const autoFollowRef = useRef(true)
-  const isAgenticBusy = agenticState.phase === 'implementing' || agenticState.phase === 'reviewing' || agenticState.phase === 'planning'
+  const isAgenticBusy = agenticState.phase === 'planning' || agenticState.phase === 'plan-review' || agenticState.phase === 'implementing' || agenticState.phase === 'reviewing'
   const isBusy = haikuStreaming || sonnetStreaming || isAgenticBusy
 
   const isNearBottom = useCallback(() => {
@@ -481,7 +487,7 @@ export default function LLMPanel({
       {/* Model pickers */}
       <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border/70 bg-surface-0/40">
         <div className="flex items-center gap-1.5">
-          <span className="text-[9px] uppercase tracking-wider text-subtle">Planner</span>
+          <span className="text-[9px] uppercase tracking-wider text-subtle">Implementer</span>
           <ModelPicker value={haikuModel} onChange={onHaikuModelChange} accentClass="text-accent-gemini" />
         </div>
         <span className="text-subtle text-[9px]">·</span>
@@ -492,15 +498,30 @@ export default function LLMPanel({
       </div>
 
       {agenticMode && (
-        <div className="px-3 py-2 border-b border-border/70 text-[10px] text-secondary leading-relaxed">
-          <span className="uppercase tracking-wider text-subtle mr-2">Workflow</span>
-          <span className="text-accent-gemini">Planner</span>
-          <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-claude">Reviewer</span>
-          <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-gemini">Implementer</span>
-          <span className="mx-1 text-subtle">→</span>
-          <span className="text-accent-claude">Final Review</span>
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/70 text-[10px] text-secondary leading-relaxed">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="uppercase tracking-wider text-subtle mr-1">Workflow</span>
+            <span className="text-accent-gemini">Plan</span>
+            <span className="mx-0.5 text-subtle">→</span>
+            <span className="text-accent-claude">Review</span>
+            <span className="mx-0.5 text-subtle">→</span>
+            <span className={autoApprove ? 'text-subtle line-through' : 'text-primary'}>Approve</span>
+            <span className="mx-0.5 text-subtle">→</span>
+            <span className="text-accent-gemini">Implement</span>
+            <span className="mx-0.5 text-subtle">→</span>
+            <span className="text-accent-claude">Review</span>
+          </div>
+          <button
+            onClick={() => onAutoApproveChange(!autoApprove)}
+            title={autoApprove ? 'Auto-approve on — click to require manual approval' : 'Auto-approve off — click to skip approval step'}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border transition-colors ${
+              autoApprove
+                ? 'border-accent-gemini/40 bg-accent-gemini/10 text-accent-gemini'
+                : 'border-border/70 text-subtle hover:text-primary'
+            }`}
+          >
+            Auto
+          </button>
         </div>
       )}
 
@@ -527,6 +548,53 @@ export default function LLMPanel({
         </div>
       )}
 
+      {/* Plan approval panel — shown when waiting for user to approve the plan */}
+      {agenticMode && agenticState.phase === 'awaiting-approval' && agenticState.plan && (
+        <div className="mx-2 mt-2 rounded-lg border border-border/70 bg-surface-1 flex-shrink-0 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border/70 bg-surface-2/50">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-accent-claude">
+              Sonnet reviewed the plan — approve to implement
+            </span>
+          </div>
+          {agenticState.plan.summary && (
+            <p className="px-3 py-2 text-[10px] text-secondary leading-relaxed border-b border-border/70">
+              {agenticState.plan.summary}
+            </p>
+          )}
+          <div className="max-h-40 overflow-y-auto">
+            {agenticState.plan.files.map((f, i) => (
+              <div key={i} className="flex items-start gap-2 px-3 py-1.5 border-b border-border/70 last:border-0">
+                <span className={`flex-shrink-0 px-1 py-0.5 text-[8px] rounded uppercase tracking-wider font-semibold ${
+                  f.action === 'create' ? 'bg-green-500/10 text-green-400' :
+                  f.action === 'modify' ? 'bg-accent-gemini/10 text-accent-gemini' :
+                  'bg-danger/10 text-danger'
+                }`}>
+                  {f.action}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] text-primary font-mono truncate">{f.path}</div>
+                  <div className="text-[9px] text-secondary leading-relaxed">{f.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-border/70">
+            <button
+              onClick={onApprovePlan}
+              className="px-3 py-1 text-[10px] rounded bg-accent-claude/20 border border-accent-claude/40 text-accent-claude hover:bg-accent-claude/30 transition-colors font-semibold"
+            >
+              Approve & Implement
+            </button>
+            <button
+              onClick={onCancel}
+              className="px-3 py-1 text-[10px] rounded border border-border/70 text-secondary hover:text-primary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Thinking indicator — shown during planning before the first token arrives */}
       {agenticMode && agenticState.phase === 'planning' && (
         <ThinkingIndicator phase={agenticState.phase} />
@@ -538,9 +606,10 @@ export default function LLMPanel({
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] text-accent-gemini flex items-center gap-1">
               <span className="animate-pulse">●</span>
-              {agenticState.phase === 'planning' && 'Haiku Planner planning…'}
-              {agenticState.phase === 'implementing' && `Haiku Implementer writing${agenticState.currentFilePath ? `: ${agenticState.currentFilePath.split('/').pop()}` : '…'}`}
-              {agenticState.phase === 'reviewing' && 'Sonnet Reviewer reviewing all files…'}
+              {agenticState.phase === 'planning' && 'Haiku planning…'}
+              {agenticState.phase === 'plan-review' && 'Sonnet reviewing plan…'}
+              {agenticState.phase === 'implementing' && `Haiku implementing${agenticState.currentFilePath ? `: ${agenticState.currentFilePath.split('/').pop()}` : '…'}`}
+              {agenticState.phase === 'reviewing' && 'Sonnet reviewing files…'}
             </span>
             {agenticState.filesWritten.length > 0 && (
               <span className="text-[10px] text-subtle">
@@ -553,7 +622,7 @@ export default function LLMPanel({
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] text-accent-claude flex items-center gap-1 shrink-0">
                 <span className="animate-pulse">●</span>
-                Sonnet Final Reviewer reviewing {agenticState.reviewingFiles.length} file{agenticState.reviewingFiles.length !== 1 ? 's' : ''}
+                Sonnet reviewing {agenticState.reviewingFiles.length} file{agenticState.reviewingFiles.length !== 1 ? 's' : ''}
               </span>
               {agenticState.reviewingFiles.slice(0, 3).map((filePath) => (
                 <span
@@ -600,7 +669,10 @@ export default function LLMPanel({
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-2 select-none">
               <p className="text-[11px] text-muted text-center leading-relaxed">
-                Haiku Planner plans.<br />Sonnet Reviewer reviews.<br />Haiku Implementer writes.<br />Sonnet Final Reviewer signs off.
+                {agenticMode
+                  ? <>Haiku plans. Sonnet reviews plan.<br />{autoApprove ? 'Auto-approve on.' : 'You approve.'} Haiku implements. Sonnet reviews.</>
+                  : <>Haiku answers. Sonnet reviews.</>
+                }
               </p>
             </div>
           )}

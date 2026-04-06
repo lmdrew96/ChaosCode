@@ -19,6 +19,17 @@ import type { FileNode, OpenFile } from '@/types'
 import useChatStore from '@/store/chatStore'
 
 
+/** Returns 1-based line numbers that differ between before and after (positional diff). */
+function diffLines(before: string, after: string): number[] {
+  const bLines = before.split('\n')
+  const aLines = after.split('\n')
+  const changed: number[] = []
+  for (let i = 0; i < aLines.length; i++) {
+    if (aLines[i] !== bLines[i]) changed.push(i + 1)
+  }
+  return changed
+}
+
 // Infer Monaco language from file extension
 function inferLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -90,6 +101,7 @@ export default function App() {
     reviews, setReviews,
     target, setTarget,
     agenticMode, setAgenticMode,
+    autoApprove, setAutoApprove,
     haikuStreaming, setHaikuStreaming,
     sonnetStreaming, setSonnetStreaming,
     estimatedTokens,
@@ -101,6 +113,10 @@ export default function App() {
   const [sessionsOpen, setSessionsOpen] = useState(false)
   // Prevents auto-save from firing while a session is being loaded into state
   const isLoadingSession = useRef(false)
+
+  // Tracks the on-disk content of each file so Cmd+S can diff against it
+  const savedContentRef = useRef<Map<string, string>>(new Map())
+  const [manualDiffLines, setManualDiffLines] = useState<number[]>([])
 
   // Refs to accumulate streamed content without extra re-renders
   const haikuMsgId = useRef<string | null>(null)
@@ -128,11 +144,14 @@ export default function App() {
 
     if (session.openFilePath) {
       await window.api.readFile(session.openFilePath)
-        .then((content) => setOpenFile({
-          path: session.openFilePath!,
-          content,
-          language: inferLanguage(session.openFilePath!.split('/').pop() ?? ''),
-        }))
+        .then((content) => {
+          savedContentRef.current.set(session.openFilePath!, content)
+          setOpenFile({
+            path: session.openFilePath!,
+            content,
+            language: inferLanguage(session.openFilePath!.split('/').pop() ?? ''),
+          })
+        })
         .catch(() => setOpenFile(null))
     } else {
       setOpenFile(null)
@@ -174,6 +193,27 @@ export default function App() {
     })
   }, [messages, reviews, rootPath, openFile?.path, pinnedFiles, target, agenticMode, activeSessionId, saveSession])
 
+  // Clear manual diff highlights when the open file changes
+  useEffect(() => {
+    setManualDiffLines([])
+  }, [openFile?.path])
+
+  // Cmd+S / Ctrl+S — write file to disk and highlight changed lines
+  useEffect(() => {
+    async function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return
+      e.preventDefault()
+      if (!openFile) return
+      await window.api.writeFile(openFile.path, openFile.content)
+      const before = savedContentRef.current.get(openFile.path) ?? ''
+      const changed = diffLines(before, openFile.content)
+      savedContentRef.current.set(openFile.path, openFile.content)
+      setManualDiffLines(changed)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [openFile])
+
   async function handleSwitchSession(id: string) {
     const session = switchSession(id)
     if (session) await applySession(session)
@@ -212,7 +252,7 @@ export default function App() {
     if (rootPath) refreshFileTree(rootPath)
   }, [rootPath])
 
-  const { agenticState, breakingIssue, dismissInterrupt, cancelAgenticTask, runAgenticTask } = useAgenticMode({
+  const { agenticState, breakingIssue, dismissInterrupt, cancelAgenticTask, approvePlan, runAgenticTask } = useAgenticMode({
     rootPath,
     fileTree,
     openFile,
@@ -222,6 +262,7 @@ export default function App() {
   async function handleFileSelect(node: FileNode) {
     if (node.type !== 'file') return
     const content = await window.api.readFile(node.path)
+    savedContentRef.current.set(node.path, content)
     setOpenFile({
       path: node.path,
       content,
@@ -316,7 +357,7 @@ export default function App() {
             ...historyForLLM.slice(0, -1),
             {
               role: 'user' as const,
-              content: buildSonnetReviewMessage(userText, haikuReply),
+              content: buildSonnetReviewMessage(userText, haikuReply, contextItems),
             }
           ]
         : historyForLLM
@@ -588,7 +629,7 @@ export default function App() {
               onChange={handleEditorChange}
               theme={resolvedTheme}
               colorScheme={colorScheme}
-              addedLines={openFile ? agenticState.fileDiffs[openFile.path]?.addedLines : undefined}
+              addedLines={openFile ? (agenticState.fileDiffs[openFile.path]?.addedLines ?? (manualDiffLines.length ? manualDiffLines : undefined)) : undefined}
             />
           </ErrorBoundary>
         </main>
@@ -633,9 +674,12 @@ export default function App() {
               sonnetStreaming={sonnetStreaming}
               agenticMode={agenticMode}
               onAgenticModeChange={setAgenticMode}
+              autoApprove={autoApprove}
+              onAutoApproveChange={setAutoApprove}
               agenticState={agenticState}
               breakingIssue={breakingIssue}
               onDismissBreaking={dismissInterrupt}
+              onApprovePlan={approvePlan}
               theme={resolvedTheme}
               colorScheme={colorScheme}
               haikuModel={haikuModel}

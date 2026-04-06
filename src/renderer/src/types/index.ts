@@ -81,6 +81,19 @@ export interface ChatHistoryItem {
   contextItems: ContextItem[]
 }
 
+// ─── Agentic plan ─────────────────────────────────────────────────────────────
+
+export interface PlanFile {
+  path: string
+  action: 'create' | 'modify' | 'delete'
+  description: string
+}
+
+export interface AgenticPlan {
+  summary: string
+  files: PlanFile[]
+}
+
 // ─── Review ────────────────────────────────────────────────────────────────────
 
 export interface ReviewEntry {
