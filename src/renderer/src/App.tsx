@@ -388,10 +388,7 @@ export default function App() {
         id: msgId, role: 'assistant', source: 'haiku', content: '', timestamp: Date.now()
       }])
 
-      window.api.removeAllListeners('llm:haiku:token')
-      window.api.removeAllListeners('llm:haiku:done')
-
-      window.api.onHaikuToken((token) => {
+      const unsubscribeHaikuToken = window.api.onHaikuToken((token) => {
         setMessages((prev) => prev.map((m) =>
           m.id === msgId ? { ...m, content: (contentToString(m.content)) + token } : m
         ))
@@ -399,11 +396,13 @@ export default function App() {
 
       window.api.sendToHaiku(history, requestId, rootPath, haikuModel)
         .then((fullText) => {
+          unsubscribeHaikuToken()
           setHaikuStreaming(false)
           activeRequestId.current = null
           resolve(fullText)
         })
         .catch((err) => {
+          unsubscribeHaikuToken()
           setMessages((prev) => prev.map((m) =>
             m.id === msgId ? { ...m, content: `[Error: ${err.message}]` } : m
           ))
@@ -426,10 +425,7 @@ export default function App() {
         id: msgId, role: 'assistant', source: 'sonnet', content: '', timestamp: Date.now()
       }])
 
-      window.api.removeAllListeners('llm:sonnet:token')
-      window.api.removeAllListeners('llm:sonnet:done')
-
-      window.api.onSonnetToken((token) => {
+      const unsubscribeSonnetToken = window.api.onSonnetToken((token) => {
         setMessages((prev) => prev.map((m) =>
           m.id === msgId ? { ...m, content: (contentToString(m.content)) + token } : m
         ))
@@ -437,11 +433,13 @@ export default function App() {
 
       window.api.sendToSonnet(history, requestId, rootPath, sonnetModel)
         .then((fullText) => {
+          unsubscribeSonnetToken()
           setSonnetStreaming(false)
           activeRequestId.current = null
           resolve(fullText)
         })
         .catch((err) => {
+          unsubscribeSonnetToken()
           setMessages((prev) => prev.map((m) =>
             m.id === msgId ? { ...m, content: `[Error: ${err.message}]` } : m
           ))

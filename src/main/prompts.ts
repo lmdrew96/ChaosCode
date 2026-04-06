@@ -193,6 +193,13 @@ ${sharedRuntimeRules}
 </prompt>
 `.trim()
 
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 export function buildPlanReviewUserMessage(args: {
   userTask: string
   planText: string
@@ -200,7 +207,7 @@ export function buildPlanReviewUserMessage(args: {
   const { userTask, planText } = args
   return [
     '<plan_review_input>',
-    `<task>${userTask}</task>`,
+    `<task>${escapeXml(userTask)}</task>`,
     '<haiku_plan>',
     planText,
     '</haiku_plan>',
@@ -216,8 +223,8 @@ export function buildAgenticReviewUserMessage(args: {
   const { filePath, content, userTask } = args
   return [
     '<review_input>',
-    `<task>${userTask}</task>`,
-    `<file_path>${filePath}</file_path>`,
+    `<task>${escapeXml(userTask)}</task>`,
+    `<file_path>${escapeXml(filePath)}</file_path>`,
     '<file_content>',
     content,
     '</file_content>',

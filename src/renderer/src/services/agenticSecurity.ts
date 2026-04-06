@@ -23,6 +23,7 @@ const secretLikePatterns: RegExp[] = [
 function normalizeRelativePath(filePath: string): string {
   return filePath
     .replaceAll('\\', '/')
+    .replace(/^~/, '/~') // expand leading ~ so isAbsolutePath catches it via startsWith('/')
     .replace(/^\.\//, '')
     .replace(/\/+/g, '/')
     .trim()

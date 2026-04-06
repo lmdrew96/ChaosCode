@@ -19,12 +19,12 @@ declare global {
       sendToSonnet: (messages: { role: string; content: string }[], requestId: string, rootPath?: string | null) => Promise<string>
       sendToHaikuAgentic: (userTask: string, requestId: string) => Promise<string>
       sonnetAgenticReview: (args: { filePath: string; content: string; userTask: string }) => Promise<string>
-      onHaikuToken: (cb: (token: string) => void) => void
-      onHaikuDone: (cb: () => void) => void
+      onHaikuToken: (cb: (token: string) => void) => () => void
+      onHaikuDone: (cb: () => void) => () => void
       onHaikuAgenticToken: (requestId: string, cb: (token: string) => void) => (() => void)
       onHaikuAgenticDone: (requestId: string, cb: () => void) => (() => void)
-      onSonnetToken: (cb: (token: string) => void) => void
-      onSonnetDone: (cb: () => void) => void
+      onSonnetToken: (cb: (token: string) => void) => () => void
+      onSonnetDone: (cb: () => void) => () => void
       removeAllListeners: (channel: string) => void
     }
     MonacoEnvironment?: {

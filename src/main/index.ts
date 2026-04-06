@@ -224,9 +224,9 @@ ipcMain.handle('llm:haiku:plan', async (event, userTask: string, requestId: stri
     if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
     const token = chunk.delta.text
     fullText += token
-    event.sender.send(tokenChannel, token)
+    if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
   }
-  event.sender.send(doneChannel)
+  if (!event.sender.isDestroyed()) event.sender.send(doneChannel)
   return fullText
 })
 
@@ -264,9 +264,9 @@ ipcMain.handle('llm:haiku:agentic', async (event, userTask: string, requestId: s
     if (chunk.type !== 'content_block_delta' || chunk.delta.type !== 'text_delta') continue
     const token = chunk.delta.text
     fullText += token
-    event.sender.send(tokenChannel, token)
+    if (!event.sender.isDestroyed()) event.sender.send(tokenChannel, token)
   }
-  event.sender.send(doneChannel)
+  if (!event.sender.isDestroyed()) event.sender.send(doneChannel)
   return fullText
 })
 
@@ -355,7 +355,7 @@ ipcMain.handle('llm:haiku', async (
       if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
         const token = chunk.delta.text
         fullText += token
-        event.sender.send('llm:haiku:token', token)
+        if (!event.sender.isDestroyed()) event.sender.send('llm:haiku:token', token)
       }
     }
 
@@ -377,7 +377,7 @@ ipcMain.handle('llm:haiku', async (
     ]
   }
 
-  event.sender.send('llm:haiku:done')
+  if (!event.sender.isDestroyed()) event.sender.send('llm:haiku:done')
   return fullText
 })
 
@@ -407,7 +407,7 @@ ipcMain.handle('llm:sonnet', async (
       if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
         const token = chunk.delta.text
         fullText += token
-        event.sender.send('llm:sonnet:token', token)
+        if (!event.sender.isDestroyed()) event.sender.send('llm:sonnet:token', token)
       }
     }
 
@@ -428,7 +428,7 @@ ipcMain.handle('llm:sonnet', async (
     ]
   }
 
-  event.sender.send('llm:sonnet:done')
+  if (!event.sender.isDestroyed()) event.sender.send('llm:sonnet:done')
   return fullText
 })
 

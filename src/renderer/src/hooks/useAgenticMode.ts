@@ -75,6 +75,8 @@ export function useAgenticMode({
   })
   const [breakingIssue, setBreakingIssue] = useState<BreakingIssue | null>(null)
 
+  // Guard against concurrent agentic runs
+  const isRunningRef = useRef(false)
   // Interrupt flag — Sonnet sets it, Haiku parsing loop checks it
   const interruptRef = useRef(false)
   // Active Haiku agentic request ID for immediate interrupt cancellation
@@ -319,6 +321,10 @@ export function useAgenticMode({
    */
   const runAgenticTask = useCallback(
     async (userTask: string, chatCarryover = '') => {
+      if (isRunningRef.current) return
+      isRunningRef.current = true
+
+      try {
       if (!rootPath) {
         setMessages((prev) => [
           ...prev,
@@ -375,6 +381,7 @@ export function useAgenticMode({
           ].join('\n')
         : '<active_file />'
 
+      const escapedTask = userTask.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const contextBlock = [
         '<agentic_task_input>',
         chatCarryover ? `<chat_carryover>\n${chatCarryover}\n</chat_carryover>` : '',
@@ -383,7 +390,7 @@ export function useAgenticMode({
         '</project_tree>',
         openFileContext,
         '<task>',
-        userTask,
+        escapedTask,
         '</task>',
         '</agentic_task_input>',
       ].filter(Boolean).join('\n\n')
@@ -666,6 +673,9 @@ export function useAgenticMode({
 
       if (!interruptRef.current) {
         setAgenticState((s) => ({ ...s, phase: 'done', currentFilePath: null }))
+      }
+      } finally {
+        isRunningRef.current = false
       }
     },
     [rootPath, fileTree, openFile, setMessages, setReviews, onFileWritten, haikuModel, sonnetModel, autoApprove] // eslint-disable-line react-hooks/exhaustive-deps

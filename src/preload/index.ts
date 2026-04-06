@@ -39,14 +39,14 @@ export type Api = {
   }) => Promise<string>
 
   // Streaming listeners
-  onHaikuToken: (cb: (token: string) => void) => void
-  onHaikuDone: (cb: () => void) => void
+  onHaikuToken: (cb: (token: string) => void) => () => void
+  onHaikuDone: (cb: () => void) => () => void
   onHaikuPlanToken: (requestId: string, cb: (token: string) => void) => () => void
   onHaikuPlanDone: (requestId: string, cb: () => void) => () => void
   onHaikuAgenticToken: (requestId: string, cb: (token: string) => void) => () => void
   onHaikuAgenticDone: (requestId: string, cb: () => void) => () => void
-  onSonnetToken: (cb: (token: string) => void) => void
-  onSonnetDone: (cb: () => void) => void
+  onSonnetToken: (cb: (token: string) => void) => () => void
+  onSonnetDone: (cb: () => void) => () => void
   removeAllListeners: (channel: string) => void
 
   // Terminal — interactive PTY
@@ -79,8 +79,16 @@ const api: Api = {
   sendToHaikuAgentic: (userTask, requestId, model) => ipcRenderer.invoke('llm:haiku:agentic', userTask, requestId, model),
   sonnetAgenticReview: (args) => ipcRenderer.invoke('llm:sonnet:agentic-review', args),
 
-  onHaikuToken: (cb) => { ipcRenderer.on('llm:haiku:token', (_e, token) => cb(token)) },
-  onHaikuDone: (cb) => { ipcRenderer.on('llm:haiku:done', () => cb()) },
+  onHaikuToken: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)
+    ipcRenderer.on('llm:haiku:token', listener)
+    return () => ipcRenderer.removeListener('llm:haiku:token', listener)
+  },
+  onHaikuDone: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('llm:haiku:done', listener)
+    return () => ipcRenderer.removeListener('llm:haiku:done', listener)
+  },
   onHaikuPlanToken: (requestId, cb) => {
     const channel = `llm:haiku:plan:token:${requestId}`
     const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)
@@ -105,8 +113,16 @@ const api: Api = {
     ipcRenderer.on(channel, listener)
     return () => ipcRenderer.removeListener(channel, listener)
   },
-  onSonnetToken: (cb) => { ipcRenderer.on('llm:sonnet:token', (_e, token) => cb(token)) },
-  onSonnetDone: (cb) => { ipcRenderer.on('llm:sonnet:done', () => cb()) },
+  onSonnetToken: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, token: string) => cb(token)
+    ipcRenderer.on('llm:sonnet:token', listener)
+    return () => ipcRenderer.removeListener('llm:sonnet:token', listener)
+  },
+  onSonnetDone: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('llm:sonnet:done', listener)
+    return () => ipcRenderer.removeListener('llm:sonnet:done', listener)
+  },
   removeAllListeners: (channel) => { ipcRenderer.removeAllListeners(channel) },
 
   terminalCreate: (cols, rows, cwd) => ipcRenderer.invoke('terminal:create', cols, rows, cwd),
