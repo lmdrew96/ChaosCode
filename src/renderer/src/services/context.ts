@@ -6,7 +6,7 @@
 
 import type { ContextItem, FileNode, OpenFile } from '@/types'
 
-const MAX_CONTEXT_CHARS = 24_000
+const MAX_CONTEXT_CHARS = 16_000
 const MAX_AGENTIC_HISTORY_CHARS = 12_000
 
 // ─── Providers ────────────────────────────────────────────────────────────────
@@ -89,10 +89,13 @@ export function buildLLMMessage(userText: string, contextItems: ContextItem[]): 
   ].filter(Boolean).join('\n')
 }
 
-export function buildSonnetReviewMessage(userText: string, contextItems: ContextItem[], haikuReply: string): string {
-  const base = buildLLMMessage(userText, contextItems)
+export function buildSonnetReviewMessage(userText: string, haikuReply: string): string {
   return [
-    base,
+    '<chat_input>',
+    '<user_request>',
+    userText,
+    '</user_request>',
+    '</chat_input>',
     '<haiku_draft>',
     haikuReply,
     '</haiku_draft>',

@@ -266,7 +266,7 @@ ipcMain.handle('llm:haiku', async (
   for (;;) {
     const stream = anthropic.messages.stream({
       model: HAIKU_MODEL,
-      max_tokens: 4096,
+      max_tokens: 2048,
       system: haikuSystemPrompt,
       messages: currentMessages,
       ...(tools ? { tools } : {}),
@@ -317,7 +317,7 @@ ipcMain.handle('llm:sonnet', async (
   for (;;) {
     const stream = anthropic.messages.stream({
       model: SONNET_MODEL,
-      max_tokens: 8096,
+      max_tokens: 4096,
       system: sonnetSystemPrompt,
       messages: currentMessages,
       ...(tools ? { tools } : {}),

@@ -39,7 +39,7 @@ function uid() {
  * preserve the first message (which typically contains the initial plan/task).
  * This prevents silent context overflow on long sessions.
  */
-const HISTORY_CHAR_BUDGET = 40_000
+const HISTORY_CHAR_BUDGET = 24_000
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'light', label: 'Light' },
@@ -305,7 +305,7 @@ export default function App() {
             ...historyForLLM.slice(0, -1),
             {
               role: 'user' as const,
-              content: buildSonnetReviewMessage(userText, contextItems, haikuReply),
+              content: buildSonnetReviewMessage(userText, haikuReply),
             }
           ]
         : historyForLLM
