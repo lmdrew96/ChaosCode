@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "prompt-security:harness": "tsx src/renderer/src/services/agenticSecurity.test.ts",
     "agentic-stream:harness": "tsx src/renderer/src/services/agenticStreamState.test.ts",
+    "line-diff:harness": "tsx src/renderer/src/services/lineDiff.test.ts",
     "agentic-parser:harness": "tsx src/renderer/src/services/agenticParser.tools.test.ts",
     "tool-registry:harness": "tsx src/renderer/src/services/toolRegistry.test.ts",
     "agentic-loop:harness": "tsx src/renderer/src/services/agenticExecutionLoop.test.ts",

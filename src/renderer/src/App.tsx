@@ -14,21 +14,10 @@ import {
   buildAgenticCarryover,
   buildSonnetReviewMessage,
 } from '@/services/context'
+import { countLineDiff } from '@/services/lineDiff'
 import { contentToString } from '@/types'
-import type { FileNode, OpenFile } from '@/types'
+import type { FileNode, Message, OpenFile } from '@/types'
 import useChatStore from '@/store/chatStore'
-
-
-/** Returns 1-based line numbers that differ between before and after (positional diff). */
-function diffLines(before: string, after: string): number[] {
-  const bLines = before.split('\n')
-  const aLines = after.split('\n')
-  const changed: number[] = []
-  for (let i = 0; i < aLines.length; i++) {
-    if (aLines[i] !== bLines[i]) changed.push(i + 1)
-  }
-  return changed
-}
 
 // Infer Monaco language from file extension
 function inferLanguage(filename: string): string {
@@ -198,6 +187,11 @@ export default function App() {
     setManualDiffLines([])
   }, [openFile?.path])
 
+  function updateManualDiff(path: string, content: string) {
+    const before = savedContentRef.current.get(path) ?? ''
+    setManualDiffLines(countLineDiff(before, content).addedLines)
+  }
+
   // Cmd+S / Ctrl+S — write file to disk and highlight changed lines
   useEffect(() => {
     async function handleKeyDown(e: KeyboardEvent) {
@@ -205,8 +199,7 @@ export default function App() {
       e.preventDefault()
       if (!openFile) return
       await window.api.writeFile(openFile.path, openFile.content)
-      const before = savedContentRef.current.get(openFile.path) ?? ''
-      const changed = diffLines(before, openFile.content)
+      const changed = countLineDiff(savedContentRef.current.get(openFile.path) ?? '', openFile.content).addedLines
       savedContentRef.current.set(openFile.path, openFile.content)
       setManualDiffLines(changed)
     }
@@ -248,9 +241,22 @@ export default function App() {
   }
 
   // Called by agentic mode when a file is written to disk
-  const handleAgenticFileWritten = useCallback((_relativePath: string) => {
-    if (rootPath) refreshFileTree(rootPath)
-  }, [rootPath])
+  const handleAgenticFileWritten = useCallback(async (relativePath: string) => {
+    if (rootPath) await refreshFileTree(rootPath)
+
+    if (!rootPath || !openFile) return
+
+    const writtenPath = `${rootPath}/${relativePath}`
+    if (openFile.path !== writtenPath) return
+
+    const savedContent = savedContentRef.current.get(writtenPath) ?? ''
+    if (openFile.content !== savedContent) return
+
+    const content = await window.api.readFile(writtenPath)
+    savedContentRef.current.set(writtenPath, content)
+    setOpenFile((prev) => (prev && prev.path === writtenPath ? { ...prev, content } : prev))
+    setManualDiffLines([])
+  }, [openFile, rootPath])
 
   const { agenticState, breakingIssue, dismissInterrupt, cancelAgenticTask, approvePlan, runAgenticTask } = useAgenticMode({
     rootPath,
@@ -286,7 +292,11 @@ export default function App() {
   }
 
   function handleEditorChange(content: string) {
-    setOpenFile((prev) => prev ? { ...prev, content } : null)
+    setOpenFile((prev) => {
+      if (!prev) return null
+      updateManualDiff(prev.path, content)
+      return { ...prev, content }
+    })
   }
 
   // --- LLM ---
@@ -443,10 +453,10 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-surface-0 text-primary">
+    <div className="relative isolate flex flex-col h-screen bg-surface-0 text-primary">
       {/* Titlebar drag region */}
       <div
-        className="flex items-center h-10 px-4 flex-shrink-0 border-b border-border/70 bg-surface-0/95 backdrop-blur select-none"
+        className="relative z-20 flex items-center h-10 px-4 flex-shrink-0 border-b border-border/70 bg-surface-0/95 backdrop-blur select-none"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="ml-16 flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -576,10 +586,10 @@ export default function App() {
       </div>
 
       {/* Main 3-panel layout */}
-      <div ref={layoutRef} className="flex flex-1 overflow-hidden min-w-0">
+      <div ref={layoutRef} className="relative z-0 flex flex-1 overflow-hidden min-w-0">
         {/* Sidebar — File tree */}
         <aside
-          className="flex flex-col flex-shrink-0 border-r border-border/70 bg-surface-1 overflow-hidden min-w-0 select-none"
+          className="relative z-10 flex flex-col flex-shrink-0 border-r border-border/70 bg-surface-1 overflow-hidden min-w-0 select-none"
           style={{ width: leftCollapsed ? '0px' : `${leftWidth}px` }}
         >
           <button
@@ -605,7 +615,7 @@ export default function App() {
           aria-orientation="vertical"
           aria-label="Resize file tree panel"
           onPointerDown={startResize('left')}
-          className="group relative flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
+          className="group relative z-20 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
           style={{ width: `${PANEL_HANDLE_WIDTH}px` }}
         >
           <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70 group-hover:bg-accent-gemini/50 transition-colors" />
@@ -622,14 +632,14 @@ export default function App() {
         </div>
 
         {/* Editor — center */}
-        <main className="flex-1 min-w-0 overflow-hidden bg-surface-0">
+        <main className="relative z-0 flex-1 min-w-0 overflow-hidden bg-surface-0">
           <ErrorBoundary label="Editor">
             <MonacoEditorPanel
               file={openFile}
               onChange={handleEditorChange}
               theme={resolvedTheme}
               colorScheme={colorScheme}
-              addedLines={openFile ? (agenticState.fileDiffs[openFile.path]?.addedLines ?? (manualDiffLines.length ? manualDiffLines : undefined)) : undefined}
+              addedLines={openFile ? (manualDiffLines.length ? manualDiffLines : agenticState.fileDiffs[openFile.path]?.addedLines) : undefined}
             />
           </ErrorBoundary>
         </main>
@@ -639,7 +649,7 @@ export default function App() {
           aria-orientation="vertical"
           aria-label="Resize chat panel"
           onPointerDown={startResize('right')}
-          className="group relative flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
+          className="group relative z-20 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-surface-2 transition-colors touch-none"
           style={{ width: `${PANEL_HANDLE_WIDTH}px` }}
         >
           <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70 group-hover:bg-accent-claude/50 transition-colors" />
@@ -657,7 +667,7 @@ export default function App() {
 
         {/* Right panel — LLM chat */}
         <aside
-          className="flex flex-col flex-shrink-0 border-l border-border/70 bg-surface-1 overflow-hidden min-w-0"
+          className="relative z-10 flex flex-col flex-shrink-0 border-l border-border/70 bg-surface-1 overflow-hidden min-w-0"
           style={{ width: rightCollapsed ? '0px' : `${rightWidth}px` }}
         >
           <ErrorBoundary label="Chat panel">

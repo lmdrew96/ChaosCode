@@ -2,54 +2,11 @@ import { useState, useRef, useCallback } from 'react'
 import { parsePlan, parseReview, parseStreamToolCalls } from '@/services/agenticParser'
 import { scheduleToolCalls } from '@/services/agenticExecutionLoop'
 import { formatValidationSummary, validateAgenticOutput } from '@/services/agenticSecurity'
+import { countLineDiff } from '@/services/lineDiff'
 import { ToolRegistry } from '@/services/toolRegistry'
 import type { AgenticPlan, FileDiffSummary, FileNode, Message, MessagePart, OpenFile, ReviewEntry, TerminalOutputPart } from '@/types'
 import useChatStore from '@/store/chatStore'
 
-function toLines(text: string): string[] {
-  if (!text) return []
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-}
-
-function lcsLength(a: string[], b: string[]): number {
-  if (a.length === 0 || b.length === 0) return 0
-
-  const prev = new Uint32Array(b.length + 1)
-  for (let i = 1; i <= a.length; i++) {
-    let diag = 0
-    for (let j = 1; j <= b.length; j++) {
-      const temp = prev[j]
-      prev[j] = a[i - 1] === b[j - 1]
-        ? diag + 1
-        : Math.max(prev[j], prev[j - 1])
-      diag = temp
-    }
-  }
-  return prev[b.length]
-}
-
-function countLineDiff(before: string, after: string): FileDiffSummary {
-  const beforeLines = toLines(before)
-  const afterLines = toLines(after)
-  const shared = lcsLength(beforeLines, afterLines)
-
-  // Greedy LCS walk to find which 1-based line numbers in `after` are new/changed
-  const addedLines: number[] = []
-  let bi = 0
-  for (let ai = 0; ai < afterLines.length; ai++) {
-    if (bi < beforeLines.length && afterLines[ai] === beforeLines[bi]) {
-      bi++
-    } else {
-      addedLines.push(ai + 1)
-    }
-  }
-
-  return {
-    added: afterLines.length - shared,
-    removed: beforeLines.length - shared,
-    addedLines,
-  }
-}
 
 function buildFileTreeText(nodes: FileNode[], depth = 0): string {
   return nodes
@@ -97,7 +54,7 @@ interface Options {
   rootPath: string | null
   fileTree: FileNode[]
   openFile: OpenFile | null
-  onFileWritten: (filePath: string) => void
+  onFileWritten: (filePath: string) => void | Promise<void>
 }
 
 export function useAgenticMode({
@@ -333,7 +290,7 @@ export function useAgenticMode({
         // If Sonnet provided a fix for the breaking issue, write it
         if (result.fixedContent) {
           await persistFile(filePath, result.fixedContent)
-          onFileWritten(filePath)
+          await onFileWritten(filePath)
         }
         return
       }
@@ -341,7 +298,7 @@ export function useAgenticMode({
       // Minor fix — write corrected content silently
       if (result.severity === 'minor' && result.fixedContent) {
         await persistFile(filePath, result.fixedContent)
-        onFileWritten(filePath)
+        await onFileWritten(filePath)
       }
 
       setAgenticState((s) => ({ ...s, filesReviewed: s.filesReviewed + 1 }))
@@ -560,7 +517,7 @@ export function useAgenticMode({
 
           await queueFileOperation(filePath, async () => {
             await persistFile(filePath, content)
-            onFileWritten(filePath)
+            await onFileWritten(filePath)
             await reviewFile(filePath, content, userTask)
           })
 
