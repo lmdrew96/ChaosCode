@@ -69,6 +69,9 @@ export type Api = {
 
   // Terminal — run command (for agents)
   runCommand: (command: string, cwd?: string, rootPath?: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+
+  // Tooltip — explain a symbol at hover
+  getTooltip: (word: string, context: string, language: string) => Promise<string>
 }
 
 const api: Api = {
@@ -155,6 +158,8 @@ const api: Api = {
   },
 
   runCommand: (command, cwd, rootPath) => ipcRenderer.invoke('terminal:run-command', command, cwd, rootPath),
+
+  getTooltip: (word, context, language) => ipcRenderer.invoke('llm:tooltip', word, context, language),
 }
 
 contextBridge.exposeInMainWorld('api', api)

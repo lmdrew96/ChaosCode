@@ -1,6 +1,10 @@
 import Editor, { useMonaco } from '@monaco-editor/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Monaco from 'monaco-editor'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { OpenFile } from '@/types'
 import type { ColorScheme, ResolvedTheme } from '@/hooks/useTheme'
 
@@ -226,11 +230,24 @@ function handleBeforeMount(monaco: typeof Monaco) {
   monaco.typescript.javascriptDefaults.setCompilerOptions(compilerOptions)
 }
 
+// Minimum word length to bother the LLM about
+const MIN_TOOLTIP_WORD_LEN = 2
+
 export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, addedLines }: Props) {
   const monaco = useMonaco()
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const decorationIds = useRef<string[]>([])
+  const tooltipCache = useRef<Map<string, string>>(new Map())
+  const tooltipProvider = useRef<Monaco.IDisposable | null>(null)
 
+  const [previewMode, setPreviewMode] = useState(false)
+
+  // Reset preview when navigating to a different file
+  useEffect(() => {
+    setPreviewMode(false)
+  }, [file?.path])
+
+  // Theme
   useEffect(() => {
     if (!monaco) return
     const key: ThemeKey = `${colorScheme}-${theme}`
@@ -238,7 +255,7 @@ export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, 
     monaco.editor.setTheme('chaos-theme')
   }, [monaco, theme, colorScheme])
 
-  // Apply / clear diff decorations when addedLines or file changes
+  // Diff decorations
   useEffect(() => {
     const editor = editorRef.current
     if (!editor || !monaco) return
@@ -261,6 +278,52 @@ export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, 
     decorationIds.current = editor.deltaDecorations([], decorations)
   }, [addedLines, monaco, file?.path])
 
+  // Tooltip hover provider — registered once when Monaco loads, disposed on unmount
+  useEffect(() => {
+    if (!monaco) return
+
+    tooltipProvider.current?.dispose()
+
+    tooltipProvider.current = monaco.languages.registerHoverProvider('*', {
+      provideHover: async (model, position) => {
+        // Skip markdown (has its own preview), skip very short files
+        const lang = model.getLanguageId()
+        if (lang === 'markdown') return null
+
+        const wordInfo = model.getWordAtPosition(position)
+        if (!wordInfo || wordInfo.word.length < MIN_TOOLTIP_WORD_LEN) return null
+
+        const word = wordInfo.word
+        const cacheKey = `${lang}:${word}`
+
+        if (tooltipCache.current.has(cacheKey)) {
+          return { contents: [{ value: tooltipCache.current.get(cacheKey)! }] }
+        }
+
+        // Gather ~5 lines around the cursor for context
+        const lineCount = model.getLineCount()
+        const start = Math.max(1, position.lineNumber - 2)
+        const end = Math.min(lineCount, position.lineNumber + 2)
+        const lines: string[] = []
+        for (let i = start; i <= end; i++) lines.push(model.getLineContent(i))
+        const context = lines.join('\n')
+
+        try {
+          const explanation = await window.api.getTooltip(word, context, lang)
+          if (!explanation) return null
+          tooltipCache.current.set(cacheKey, explanation)
+          return { contents: [{ value: explanation }] }
+        } catch {
+          return null
+        }
+      },
+    })
+
+    return () => {
+      tooltipProvider.current?.dispose()
+    }
+  }, [monaco])
+
   if (!file) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 select-none">
@@ -271,38 +334,141 @@ export default function MonacoEditorPanel({ file, onChange, theme, colorScheme, 
     )
   }
 
+  const isMarkdown = file.language === 'markdown'
+  const syntaxTheme = theme === 'dark' ? atomDark : vs
+
   return (
-    <Editor
-      height="100%"
-      path={file.path}
-      language={file.language}
-      value={file.content}
-      theme={theme === 'dark' ? 'chaos-dark' : 'chaos-light'}
-      beforeMount={handleBeforeMount}
-      onMount={(editor) => { editorRef.current = editor }}
-      onChange={(val) => onChange(val ?? '')}
-      options={{
-        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-        fontSize: 13,
-        lineHeight: 22,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        renderWhitespace: 'selection',
-        smoothScrolling: true,
-        cursorBlinking: 'smooth',
-        cursorSmoothCaretAnimation: 'on',
-        padding: { top: 16, bottom: 16 },
-        overviewRulerBorder: false,
-        hideCursorInOverviewRuler: true,
-        renderLineHighlight: 'gutter',
-        folding: true,
-        lineNumbers: 'on',
-        wordWrap: 'off',
-        tabSize: 2,
-        insertSpaces: true,
-        automaticLayout: true,
-        bracketPairColorization: { enabled: true },
-      }}
-    />
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Preview / Edit toggle for markdown files */}
+      {isMarkdown && (
+        <button
+          onClick={() => setPreviewMode((p) => !p)}
+          className="absolute top-2 right-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] uppercase tracking-widest font-medium border border-border/60 bg-surface-1/90 text-secondary hover:text-primary hover:border-border transition-colors backdrop-blur-sm select-none"
+        >
+          {previewMode ? '✎ Edit' : '⊞ Preview'}
+        </button>
+      )}
+
+      {/* Markdown preview pane */}
+      {isMarkdown && previewMode ? (
+        <div className="h-full w-full overflow-y-auto px-12 py-10 bg-surface-0">
+          <article className="max-w-2xl mx-auto text-[13.5px] leading-relaxed text-primary">
+            <ReactMarkdown
+              components={{
+                code({ inline, className, children, ...props }: any) {
+                  const match = /language-(\w+)/.exec(className || '')
+                  const language = match ? match[1] : 'text'
+                  if (inline) {
+                    return (
+                      <code className="bg-surface-2 px-1.5 py-0.5 rounded text-[12px] font-mono text-primary" {...props}>
+                        {children}
+                      </code>
+                    )
+                  }
+                  return (
+                    <div className="my-3 rounded-lg overflow-hidden">
+                      <SyntaxHighlighter
+                        language={language}
+                        style={syntaxTheme}
+                        customStyle={{
+                          backgroundColor: theme === 'dark' ? 'rgba(15,15,15,0.6)' : 'rgba(248,250,252,1)',
+                          padding: '14px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          lineHeight: '1.6',
+                        }}
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    </div>
+                  )
+                },
+                h1({ children, ...props }: any) {
+                  return <h1 className="text-xl font-bold mt-6 mb-3 text-primary border-b border-border/50 pb-2" {...props}>{children}</h1>
+                },
+                h2({ children, ...props }: any) {
+                  return <h2 className="text-base font-bold mt-5 mb-2 text-primary" {...props}>{children}</h2>
+                },
+                h3({ children, ...props }: any) {
+                  return <h3 className="text-sm font-semibold mt-4 mb-1.5 text-primary" {...props}>{children}</h3>
+                },
+                p({ children }: any) {
+                  return <div className="my-2 text-primary">{children}</div>
+                },
+                ul({ children, ...props }: any) {
+                  return <ul className="list-disc list-outside pl-5 my-2 space-y-1" {...props}>{children}</ul>
+                },
+                ol({ children, ...props }: any) {
+                  return <ol className="list-decimal list-outside pl-5 my-2 space-y-1" {...props}>{children}</ol>
+                },
+                li({ children, ...props }: any) {
+                  return <li className="text-primary" {...props}>{children}</li>
+                },
+                blockquote({ children, ...props }: any) {
+                  return <blockquote className="border-l-2 border-accent-gemini/50 pl-4 my-3 text-secondary italic" {...props}>{children}</blockquote>
+                },
+                strong({ children, ...props }: any) {
+                  return <strong className="font-semibold text-primary" {...props}>{children}</strong>
+                },
+                em({ children, ...props }: any) {
+                  return <em className="italic text-secondary" {...props}>{children}</em>
+                },
+                a({ children, ...props }: any) {
+                  return <a className="text-accent-gemini hover:text-accent-gemini/80 underline" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+                },
+                hr({ ...props }: any) {
+                  return <hr className="my-5 border-border/50" {...props} />
+                },
+                table({ children, ...props }: any) {
+                  return <div className="my-3 overflow-x-auto"><table className="w-full text-sm border-collapse" {...props}>{children}</table></div>
+                },
+                th({ children, ...props }: any) {
+                  return <th className="text-left px-3 py-1.5 font-semibold border border-border/50 bg-surface-1" {...props}>{children}</th>
+                },
+                td({ children, ...props }: any) {
+                  return <td className="px-3 py-1.5 border border-border/50" {...props}>{children}</td>
+                },
+              }}
+            >
+              {file.content}
+            </ReactMarkdown>
+          </article>
+        </div>
+      ) : (
+        <Editor
+          height="100%"
+          path={file.path}
+          language={file.language}
+          value={file.content}
+          theme={theme === 'dark' ? 'chaos-dark' : 'chaos-light'}
+          beforeMount={handleBeforeMount}
+          onMount={(editor) => { editorRef.current = editor }}
+          onChange={(val) => onChange(val ?? '')}
+          options={{
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            fontSize: 13,
+            lineHeight: 22,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            renderWhitespace: 'selection',
+            smoothScrolling: true,
+            cursorBlinking: 'smooth',
+            cursorSmoothCaretAnimation: 'on',
+            padding: { top: 16, bottom: 16 },
+            overviewRulerBorder: false,
+            hideCursorInOverviewRuler: true,
+            renderLineHighlight: 'gutter',
+            folding: true,
+            lineNumbers: 'on',
+            wordWrap: 'off',
+            tabSize: 2,
+            insertSpaces: true,
+            automaticLayout: true,
+            bracketPairColorization: { enabled: true },
+          }}
+        />
+      )}
+    </div>
   )
 }

@@ -542,6 +542,23 @@ ipcMain.handle('llm:sonnet', async (
   return fullText
 })
 
+// --- Tooltip IPC ---
+
+ipcMain.handle('llm:tooltip', async (_event, word: string, context: string, language: string) => {
+  const anthropic = createAnthropicClient()
+  const message = await anthropic.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: 150,
+    system: 'You are a concise code explainer. Given a symbol and its surrounding code, write 1–2 sentences explaining what the symbol does or represents. Plain text only, no markdown.',
+    messages: [{
+      role: 'user',
+      content: `Language: ${language}\n\nContext:\n\`\`\`\n${context}\n\`\`\`\n\nExplain: \`${word}\``,
+    }],
+  })
+  const block = message.content.find((b) => b.type === 'text')
+  return block?.type === 'text' ? block.text : ''
+})
+
 // --- Terminal IPC ---
 
 const terminals = new Map<string, ReturnType<typeof pty.spawn>>()
